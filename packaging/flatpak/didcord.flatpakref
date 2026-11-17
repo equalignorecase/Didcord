@@ -1,0 +1,9 @@
+[Flatpak Ref]
+Name=cz.viceverse.didcord
+Branch=master
+Title=Didcord
+Comment=Fast, secure and lightweight native Discord client
+Icon=https://equalignorecase.github.io/Didcord/icons/didcord.png
+Url=https://equalignorecase.github.io/Didcord/flatpak/repo
+RuntimeRepo=https://flathub.org/repo/flathub.flatpakrepo
+IsRuntime=false
