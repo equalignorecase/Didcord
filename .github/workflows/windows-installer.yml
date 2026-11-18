@@ -1,0 +1,145 @@
+name: Windows installer release
+run-name: Windows installers from CI run ${{ inputs.source_run }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run:
+        description: Successful native-client push-to-main run containing Windows payloads
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: windows-installer-${{ inputs.source_run }}
+  cancel-in-progress: false
+
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - name: Require successful main CI from this repository
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SOURCE_RUN: ${{ inputs.source_run }}
+        run: |
+          [[ "$SOURCE_RUN" =~ ^[0-9]+$ ]]
+          gh api "repos/$GH_REPO/actions/runs/$SOURCE_RUN" > run.json
+          python3 - <<'PY'
+          import json, os
+          run = json.load(open('run.json'))
+          assert run['conclusion'] == 'success' and run['status'] == 'completed'
+          assert run['event'] == 'push' and run['head_branch'] == 'main'
+          assert run['path'] == '.github/workflows/ci.yml'
+          assert run['head_repository']['full_name'] == os.environ['GH_REPO']
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f"sha={run['head_sha']}\n")
+          PY
+
+  installer:
+    needs: source
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            arch: X64
+            machine: '0x8664'
+          - os: windows-11-arm
+            arch: ARM64
+            machine: '0xaa64'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.99.1
+      - name: Install NSIS
+        run: choco install nsis --no-progress -y
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: didcord-Windows-${{ matrix.arch }}-unsigned
+          run-id: ${{ inputs.source_run }}
+          github-token: ${{ github.token }}
+          path: payload
+      - name: Verify payload architecture and source version
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ needs.source.outputs.sha }}
+          MACHINE: ${{ matrix.machine }}
+        run: |
+          git fetch --no-tags origin "$SOURCE_SHA"
+          git show "$SOURCE_SHA:Cargo.toml" > source-Cargo.toml
+          python - <<'PY'
+          import os, pathlib, struct, tomllib
+          data = pathlib.Path('payload/didcord.exe').read_bytes()
+          assert data[:2] == b'MZ'
+          offset = struct.unpack_from('<I', data, 0x3c)[0]
+          assert data[offset:offset+4] == b'PE\0\0'
+          assert struct.unpack_from('<H', data, offset+4)[0] == int(os.environ['MACHINE'], 16)
+          version = tomllib.loads(pathlib.Path('source-Cargo.toml').read_text())['workspace']['package']['version']
+          with open(os.environ['GITHUB_ENV'], 'a') as output:
+              output.write(f'VERSION={version}\n')
+          PY
+      - name: Exercise installer safety, upgrade and removal
+        run: python packaging/windows/test_installer.py
+      - name: Build installer and test actual release payload
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force output | Out-Null
+          & 'C:\Program Files (x86)\NSIS\makensis.exe' -V2 -NOCD "-DVERSION=$env:VERSION" "-DDIST_DIR=$pwd\payload" "-DOUTPUT_DIR=$pwd\output" packaging/windows/installer.nsi
+          if ($LASTEXITCODE -ne 0) { throw 'NSIS compilation failed' }
+          python packaging/windows/test_release_installer.py "output/didcord-$env:VERSION-setup.exe" payload "$env:VERSION"
+          if ($LASTEXITCODE -ne 0) { throw 'Release installer validation failed' }
+          Move-Item "output/didcord-$env:VERSION-setup.exe" "output/didcord-$env:VERSION-Windows-${{ matrix.arch }}-Setup.exe"
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: installer-${{ matrix.arch }}
+          path: output/*.exe
+          if-no-files-found: error
+
+  publish:
+    needs: [source, installer]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: installer-*
+          merge-multiple: true
+          path: release-assets
+      - name: Publish verified Windows preview installers
+        working-directory: release-assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SOURCE_SHA: ${{ needs.source.outputs.sha }}
+          SOURCE_RUN: ${{ inputs.source_run }}
+        run: |
+          test "$(find . -maxdepth 1 -name '*-Setup.exe' | wc -l)" -eq 2
+          sha256sum ./*.exe > SHA256SUMS.txt
+          tag="windows-preview-$SOURCE_RUN"
+          cat > release-notes.md <<EOF
+          Windows installers for Didcord (Preview).
+
+          Choose X64 for Intel/AMD Windows, or ARM64 for Windows on Arm.
+          Source commit: $SOURCE_SHA
+          Packaging workflow commit: $GITHUB_SHA
+          Payloads: https://github.com/$GH_REPO/actions/runs/$SOURCE_RUN
+          Packaging and install/uninstall checks: https://github.com/$GH_REPO/actions/runs/$GITHUB_RUN_ID
+
+          Both installers passed offline safety, upgrade, shortcut and actual payload install/uninstall checks on their Windows runners. SHA-256 checksums are attached.
+
+          These installers are unsigned. Windows may show an unrecognized publisher warning. This is a preview: live Discord interoperability, calls and media have not been verified. No macOS/Linux assets or Homebrew changes are included.
+          EOF
+          gh release create "$tag" ./*.exe SHA256SUMS.txt --target "$SOURCE_SHA" --prerelease --title 'Didcord Windows Preview' --notes-file release-notes.md
