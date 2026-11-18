@@ -1,6 +1,8 @@
 // Offline release smoke; never invokes semantic-release publishing or Apple services.
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { load } from 'js-yaml';
 import { analyzeCommits } from '@semantic-release/commit-analyzer';
@@ -30,27 +32,46 @@ const notes = await generateNotes({ preset: 'conventionalcommits' }, {
 });
 assert(notes.includes('fix scrolling'));
 
-const releaseNotesContext = {
-  cwd: process.cwd(), logger, options: { repositoryUrl: 'https://github.com/equalignorecase/Didcord' },
-  commits: [
-    { hash: 'eb98a663421d6e142fe0f5f3be6f175a1b95a8e9', author: { name: 'Release Note Author', email: 'release-note-author@example.invalid' }, message: 'feat(ui): add category and channel permission settings (#149)' },
-    { hash: 'baec1dfc7b5755b0f063a1ea16d05f81936d0dc0', author: { name: 'Audio Note Author', email: 'audio-note-author@example.invalid' }, message: 'feat(audio): bundle notification sounds (#140)' },
-  ],
-  lastRelease: { gitTag: 'v1.0.0' },
-  nextRelease: { version: '1.0.0', gitHead: 'v1.0.0-nightly.10.1' },
-};
-const prodNotes = await generateReleaseNotes('production', { preset: 'conventionalcommits' }, releaseNotesContext);
-assert(prodNotes.includes('category and channel permission settings'));
-assert(prodNotes.includes('notification sounds'));
-assert(prodNotes.includes('by Release Note Author'));
-assert(prodNotes.includes('[#149](https://github.com/equalignorecase/Didcord/pull/149)'));
-assert(prodNotes.includes('## New Contributors'));
-assert(prodNotes.indexOf('## New Contributors') > prodNotes.indexOf('notification sounds'));
-assert(prodNotes.includes('Release Note Author made their first contribution'));
+// Keep nightly filtering independent of the checkout's tags and upstream history.
+const checkout = process.cwd();
+const fixture = mkdtempSync(join(tmpdir(), 'didcord-release-notes-'));
+try {
+  process.chdir(fixture);
+  const git = (...args) => execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  git('init', '--quiet');
+  const commit = message => {
+    git('-c', 'user.name=Fixture Author', '-c', 'user.email=fixture@example.invalid', '-c', 'commit.gpgsign=false', 'commit', '--quiet', '--allow-empty', '-m', message);
+    return git('rev-parse', 'HEAD');
+  };
+  const audioHash = commit('feat(audio): bundle notification sounds (#140)');
+  git('tag', 'v1.0.0');
+  const permissionsHash = commit('feat(ui): add category and channel permission settings (#149)');
+  git('tag', 'v1.0.0-nightly.10.1');
+  const releaseNotesContext = {
+    cwd: process.cwd(), logger, options: { repositoryUrl: 'https://github.com/equalignorecase/Didcord' },
+    commits: [
+      { hash: permissionsHash, author: { name: 'Release Note Author', email: 'release-note-author@example.invalid' }, message: 'feat(ui): add category and channel permission settings (#149)' },
+      { hash: audioHash, author: { name: 'Audio Note Author', email: 'audio-note-author@example.invalid' }, message: 'feat(audio): bundle notification sounds (#140)' },
+    ],
+    lastRelease: { gitTag: 'v1.0.0' },
+    nextRelease: { version: '1.0.0', gitHead: 'v1.0.0-nightly.10.1' },
+  };
+  const prodNotes = await generateReleaseNotes('production', { preset: 'conventionalcommits' }, releaseNotesContext);
+  assert(prodNotes.includes('category and channel permission settings'));
+  assert(prodNotes.includes('notification sounds'));
+  assert(prodNotes.includes('by Release Note Author'));
+  assert(prodNotes.includes('[#149](https://github.com/equalignorecase/Didcord/pull/149)'));
+  assert(prodNotes.includes('## New Contributors'));
+  assert(prodNotes.indexOf('## New Contributors') > prodNotes.indexOf('notification sounds'));
+  assert(prodNotes.includes('Release Note Author made their first contribution'));
 
-const nightlyNotes = await generateReleaseNotes('nightly', { preset: 'conventionalcommits' }, releaseNotesContext);
-assert(nightlyNotes.includes('category and channel permission settings'));
-assert(!nightlyNotes.includes('notification sounds'));
+  const nightlyNotes = await generateReleaseNotes('nightly', { preset: 'conventionalcommits' }, releaseNotesContext);
+  assert(nightlyNotes.includes('category and channel permission settings'));
+  assert(!nightlyNotes.includes('notification sounds'));
+} finally {
+  process.chdir(checkout);
+  rmSync(fixture, { recursive: true, force: true });
+}
 
 const workflow = load(readFileSync('.github/workflows/release.yml', 'utf8'));
 assert.deepEqual(Object.keys(workflow.on), ['schedule', 'workflow_dispatch']);
