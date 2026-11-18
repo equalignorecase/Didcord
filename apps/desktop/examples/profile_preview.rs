@@ -37,13 +37,51 @@ struct Preview {
 	started: Instant,
 }
 
+#[test]
+fn close_settings_preserves_later_interactive_input() {
+	use eframe::App;
+	let mut preview = Preview {
+		interactive: true,
+		smoke: false,
+		messaging: ui::MessagingUi::default(),
+		state: client_core::State::default(),
+		output: PathBuf::new(),
+		thumbnail: false,
+		proxy_artwork: false,
+		frames: 0,
+		scroll: None,
+		toolbar_hover: None,
+		close_settings: true,
+		requested: false,
+		screenshot: None,
+		writer: None,
+		saved: Arc::new(AtomicBool::new(false)),
+		started: Instant::now(),
+	};
+	let ctx = egui::Context::default();
+	let mut first = egui::RawInput::default();
+	preview.raw_input_hook(&ctx, &mut first);
+	assert!(matches!(
+		first.events.as_slice(),
+		[egui::Event::Key {
+			key: egui::Key::Escape,
+			pressed: true,
+			..
+		}]
+	));
+	let mut next = egui::RawInput::default();
+	next.events.push(egui::Event::Text("สวัสดี".into()));
+	preview.raw_input_hook(&ctx, &mut next);
+	assert!(matches!(next.events.as_slice(), [egui::Event::Text(text)] if text == "สวัสดี"));
+}
+
 impl eframe::App for Preview {
 	fn persist_egui_memory(&self) -> bool {
 		false
 	}
 
 	fn raw_input_hook(&mut self, _: &egui::Context, raw_input: &mut egui::RawInput) {
-		if self.close_settings && self.frames == 0 {
+		if std::mem::take(&mut self.close_settings) {
 			// The Chat settings page shares its route name with the timeline's semantic page.
 			// Close it first so this fixture reaches the conversation.
 			raw_input.events.push(egui::Event::Key {

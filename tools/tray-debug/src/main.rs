@@ -1,8 +1,4 @@
 //! Offline Linux tray check. Run with `dbus-run-session -- cargo run --locked -p tray-debug`.
-#[cfg(target_os = "linux")]
-#[path = "../../../crates/platform/src/tray.rs"]
-mod tray;
-
 pub use egui;
 // `tray_window.rs` addresses the compositor helper through `platform::compositor`, so this
 // tool depends on the real crate; it's already built for other workspace members.
@@ -25,7 +21,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(target_os = "linux")]
 mod linux {
-	use super::tray::{self, Event, Tray};
+	use platform::tray::{self, Event, Tray};
 	use std::{
 		sync::{
 			Arc,
@@ -131,7 +127,13 @@ mod linux {
 		let menu_path: zbus::zvariant::OwnedObjectPath = item.get_property("Menu").await?;
 		let menu =
 			zbus::Proxy::new(&bus, service.clone(), menu_path, "com.canonical.dbusmenu").await?;
-		for (id, expected) in [(1i32, Event::Show), (2, Event::Minimize), (3, Event::Quit)] {
+		for (id, expected) in [
+			(1i32, Event::Show),
+			(2, Event::Minimize),
+			(4, Event::ToggleMute),
+			(5, Event::ToggleDeafen),
+			(8, Event::Quit),
+		] {
 			menu.call::<_, _, ()>(
 				"Event",
 				&(id, "clicked", zbus::zvariant::Value::new(0i32), 0u32),

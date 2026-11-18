@@ -13,9 +13,18 @@ dependencies = [
 name = "custom-rpc"
 version = "1.0.0"
 dependencies = [
+ "didcord-extension-sdk",
  "serde",
  "serde_json",
- "didcord-extension-sdk",
+]
+
+[[package]]
+name = "didcord-extension-sdk"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "url",
 ]
 
 [[package]]
@@ -33,9 +42,9 @@ dependencies = [
 name = "external-search-tools"
 version = "1.0.3"
 dependencies = [
+ "didcord-extension-sdk",
  "serde",
  "serde_json",
- "didcord-extension-sdk",
  "url",
 ]
 
@@ -262,15 +271,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "didcord-extension-sdk"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "url",
-]
-
-[[package]]
 name = "smallvec"
 version = "1.16.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -308,9 +308,9 @@ dependencies = [
 name = "text-commands"
 version = "1.0.1"
 dependencies = [
+ "didcord-extension-sdk",
  "serde",
  "serde_json",
- "didcord-extension-sdk",
 ]
 
 [[package]]
