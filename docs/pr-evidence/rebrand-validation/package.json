@@ -1,0 +1,14 @@
+{
+  "baseline": {
+    "executable_bytes": 77088016,
+    "installed_bytes": 82781747,
+    "files": 239,
+    "zip_bytes": 52098869
+  },
+  "after": {
+    "executable_bytes": 77088016,
+    "installed_bytes": 82781747,
+    "files": 239,
+    "zip_bytes": 52098869
+  }
+}

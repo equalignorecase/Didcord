@@ -19,8 +19,9 @@ other vendor's branding, and no third-party font is embedded in them.
     rsvg-convert -w 72 -h 72 -o assets/brand/didcord-tray.png
   ```
 
-The packaged platform icons built from the same artwork live in `packaging/` (`macos/Didcord.icns`
-and `Didcord.icon`, `windows/Didcord.ico`, `linux/hicolor/*`).
+The packaged platform icons built from the same artwork live in `packaging/`
+(`macos/Didcord.icns`, `windows/Didcord.ico`, `linux/hicolor/*`). macOS packaging
+copies the bundled ICNS; Icon Composer sources and appearance variants are not included.
 
 Brand palette: `#8BBEFF` → `#506DDC` → `#2D247C` plate gradient, `#F5FAFF` and `#D1E0FF` waves.
 The interface accent (`design::DEFAULT_PRIMARY_RGB`, `#1a72e8`) is drawn from the same family and

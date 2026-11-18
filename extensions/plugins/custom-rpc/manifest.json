@@ -3,9 +3,9 @@
   "id": "custom-rpc",
   "name": "Custom Rich Presence",
   "version": "1.0.0",
-  "author": "Didcord contributors",
+  "author": "Serein contributors",
   "license": "MIT OR Apache-2.0",
-  "source": "https://github.com/equalignorecase/Didcord/tree/main/plugins/custom-rpc",
+  "source": "https://github.com/ViceVerse-cz/Serein-extensions/tree/main/plugins/custom-rpc",
   "kind": "plugin",
   "capabilities": [
     "rich_presence",

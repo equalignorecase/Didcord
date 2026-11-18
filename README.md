@@ -131,12 +131,14 @@ didcord/
 
 ## ความปลอดภัยและนโยบายจัดเก็บข้อมูล
 
-- **การป้องกัน Token**: เก็บใน OS credential store เป็นหลัก; มีตัวเลือก plaintext แบบ opt-in เฉพาะกรณี OS store ใช้งานไม่ได้ และ redact/zeroize ในหน่วยความจำ
+- **การป้องกัน Token**: เก็บใน OS credential store เป็นหลัก และ redact/zeroize ในหน่วยความจำ; บน Linux จะใช้ไฟล์ plaintext โดยอัตโนมัติเฉพาะเมื่อยืนยันว่าไม่มี OS credential store เท่านั้น ไม่มีสวิตช์ opt-in และไม่ใช้ fallback เมื่อ store ถูกล็อก ทำงานผิดพลาด หรือหมดเวลา
 - **Local Cache**: SQLite บน disk **ไม่ได้เข้ารหัส** แต่จำกัดขนาดและลบข้อมูลบัญชีออกทั้งหมดเมื่อกด Logout
 - **ไม่มี Telemetry**: ไม่มีการเก็บสถิติ, analytics หรือส่ง crash report อัตโนมัติ
 - **ไม่ปลอมแปลงตัวตนแบบสุ่ม**: ไม่ bypass CAPTCHA/MFA ไม่ดึง token จากแอปอื่น
 
 อ่านรายละเอียดเพิ่มเติมได้ใน [Storage Policy](docs/storage-policy.md) และ [Threat Model](docs/threat-model.md)
+
+หากย้ายมาจาก Serein หรือรุ่นที่ใช้ App ID เก่า ให้อ่าน [ข้อจำกัดการย้ายข้อมูลและ saved login](docs/platform-support.md#upgrading-from-an-earlier-app-identity) ก่อนเปลี่ยนรุ่น
 
 ---
 

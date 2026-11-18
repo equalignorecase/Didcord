@@ -1,0 +1,17 @@
+[
+  {
+    "run": 1,
+    "launch_to_saved_frame_seconds": 2.6791003329853993,
+    "process_exit_seconds": 2.8635748329979833
+  },
+  {
+    "run": 2,
+    "launch_to_saved_frame_seconds": 1.2712111250148155,
+    "process_exit_seconds": 1.4517471250146627
+  },
+  {
+    "run": 3,
+    "launch_to_saved_frame_seconds": 1.2692031670012511,
+    "process_exit_seconds": 1.4551744170021266
+  }
+]

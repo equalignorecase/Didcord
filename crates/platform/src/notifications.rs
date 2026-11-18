@@ -569,8 +569,9 @@ fn close(outstanding: &mut Option<NotificationHandle>) {
 	#[cfg(target_os = "windows")]
 	if outstanding.take().is_some() {
 		use windows::{UI::Notifications::ToastNotificationManager, core::HSTRING};
-		let _ = ToastNotificationManager::History()
-			.and_then(|history| history.ClearWithId(&HSTRING::from("io.github.equalignorecase.didcord")));
+		let _ = ToastNotificationManager::History().and_then(|history| {
+			history.ClearWithId(&HSTRING::from("io.github.equalignorecase.didcord"))
+		});
 	}
 }
 

@@ -1,5 +1,28 @@
 # Performance findings
 
+## Rebrand validation baseline — November 18, 2026
+
+Offline macOS 27.2 arm64, Apple M1 / 8 GiB, Retina 2× and Metal, with pinned Rust
+1.99.1 release builds and locked dependencies. Three 1120×760 native chat-fixture
+runs used an eight-second warmup and approximately twenty-second sample each.
+Median process CPU was 0.04925% of one core; median settled main-process RSS was
+156,768 KiB (153.09 MiB), with maximum sampled RSS of 157,088 KiB. No local build
+or interaction ran during sampling. GPU and helper-process allocations were not
+sampled. Diagnostics were off; these are baseline numbers, not improvement claims.
+
+Three launch-to-saved-frame readings were 2.679 / 1.271 / 1.269 seconds, including
+the fixture's minimum one-second capture delay, encoding and file publication.
+Actual first-present latency and cold startup remain unmeasured.
+
+Like-for-like, ad-hoc-signed voice-enabled staging payloads before/after the gateway
+diagnostic byte fix both contained a 77,088,016-byte executable, 82,781,747 bytes in
+239 installed files and a 52,098,869-byte ZIP. The baseline executable was restaged
+with identical final resources because its original packaging attempt exposed a
+missing icon source. This does not establish a successful baseline package command.
+Later evidence documentation changes package size independently of runtime behavior.
+
+See [methods, raw readings, screenshots and limitations](pr-evidence/rebrand-validation/README.md).
+
 ## Voice connection ping
 
 Compared `5a11f95b` with the voice ping change using locked Rust 1.99.1 release builds

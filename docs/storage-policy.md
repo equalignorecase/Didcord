@@ -1125,6 +1125,12 @@ Schema 7 adds one checked integer `message_kind` (0..255) per cached message, wi
 
 ### Opt-in synchronization and compatibility diagnostics
 
+Gateway/member diagnostics are off by default. Each enabled scope allows at most
+64 lines and 8 KiB of attempted stderr output across reconnects. Byte accounting
+includes the UTF-8 label, scope, complete `[Didcord ...]` prefix and newline,
+including attempts against closed output. Labels are static and exclude received
+event names, IDs, payloads and credentials.
+
 Voice performance diagnostics (`DIDCORD_VOICE_DIAGNOSTICS=1`) are also off by default.
 They include aggregate compressed-video byte counts, decoded dimensions/transitions,
 repair/feedback counts and playback-queue outcomes. They retain at most eight fixed-size

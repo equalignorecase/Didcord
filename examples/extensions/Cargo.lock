@@ -6,21 +6,30 @@ version = 4
 name = "app-actions"
 version = "1.0.0"
 dependencies = [
- "serein-extension-sdk",
+ "didcord-extension-sdk",
 ]
 
 [[package]]
 name = "app-toolbox"
 version = "1.0.0"
 dependencies = [
- "serein-extension-sdk",
+ "didcord-extension-sdk",
 ]
 
 [[package]]
 name = "conversation-inspector"
 version = "1.0.0"
 dependencies = [
- "serein-extension-sdk",
+ "didcord-extension-sdk",
+]
+
+[[package]]
+name = "didcord-extension-sdk"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "url",
 ]
 
 [[package]]
@@ -47,7 +56,7 @@ dependencies = [
 name = "guild-inspector"
 version = "1.0.0"
 dependencies = [
- "serein-extension-sdk",
+ "didcord-extension-sdk",
 ]
 
 [[package]]
@@ -176,8 +185,8 @@ checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 name = "message-counter"
 version = "1.0.0"
 dependencies = [
+ "didcord-extension-sdk",
  "serde",
- "serein-extension-sdk",
 ]
 
 [[package]]
@@ -217,9 +226,9 @@ dependencies = [
 name = "rgb-cycle"
 version = "1.1.0"
 dependencies = [
+ "didcord-extension-sdk",
  "serde",
  "serde_json",
- "serein-extension-sdk",
 ]
 
 [[package]]
@@ -263,15 +272,6 @@ dependencies = [
  "serde",
  "serde_core",
  "zmij",
-]
-
-[[package]]
-name = "serein-extension-sdk"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "url",
 ]
 
 [[package]]

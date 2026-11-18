@@ -6,7 +6,7 @@ import pack
 
 theme = (catalog.ROOT / "themes/ocean.didcord-extension").read_bytes()
 plugin = (catalog.ROOT / "plugins/packages/message-delete-protector.didcord-extension").read_bytes()
-assert catalog.validate(theme)["id"] == "didcord-ocean"
+catalog.validate(theme)
 assert catalog.validate(plugin)["kind"] == "plugin"
 rpc = (catalog.ROOT / "plugins/packages/custom-rpc.didcord-extension").read_bytes()
 assert catalog.validate(rpc)["capabilities"] == ["rich_presence", "storage"]

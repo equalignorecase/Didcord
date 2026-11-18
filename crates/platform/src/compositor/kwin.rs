@@ -204,7 +204,10 @@ mod tests {
 		let pid = script(State::Hidden, &Target::Pid(42));
 		assert!(pid.contains("w.pid === 42"));
 		assert!(pid.contains("skip(w, true); w.minimized = true;"));
-		let app = script(State::Shown, &Target::App("io.github.equalignorecase.didcord".into()));
+		let app = script(
+			State::Shown,
+			&Target::App("io.github.equalignorecase.didcord".into()),
+		);
 		assert!(app.contains("w.desktopFileName === \"io.github.equalignorecase.didcord\""));
 		assert!(app.contains("workspace.activeWindow = w"));
 		assert!(valid_app_id("io.github.equalignorecase.didcord"));

@@ -705,6 +705,8 @@ mod sticker_tests {
 		});
 		tokio::time::advance(Duration::from_millis(1)).await;
 		tokio::time::advance(Duration::from_secs(3600)).await;
+		// Real socket IO must not auto-advance paused time into the HTTP deadline.
+		tokio::time::resume();
 		assert!(matches!(action.await.unwrap(), Ok(Outcome::Member(_))));
 		server.await.unwrap();
 	}
