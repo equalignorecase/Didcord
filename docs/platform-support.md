@@ -127,6 +127,19 @@ which requests a borderless window immediately and persists across restarts. Mov
 and closing then use the window manager's controls. The compositor controls whether decoration
 requests are honored; native X11/Wayland verification of this toggle remains pending.
 
+With standalone macOS Command Line Tools, the current `apple-metal` dependency
+looks for Swift compatibility libraries in an Xcode-only subdirectory. If linking
+fails with `__swift_FORCE_LOAD_$_swiftCompatibility56`, point the build at the
+installed Command Line Tools libraries for that command:
+
+```sh
+LIBRARY_PATH=/Library/Developer/CommandLineTools/usr/lib/swift/macosx cargo xtask check
+LIBRARY_PATH=/Library/Developer/CommandLineTools/usr/lib/swift/macosx cargo xtask package
+```
+
+This workaround was checked with macOS 27.2 arm64 and Command Line Tools. It does
+not install Xcode or change system-wide linker settings.
+
 | Platform | Build/runtime requirements | Status |
 |---|---|---|
 | macOS | Rust 1.99.1, Xcode command-line tools, CMake; Metal/wgpu, system WKWebView, Keychain | Local arm64 build and native synthetic window tested on macOS 27.0 beta, Apple M1 Pro / 16 GiB |

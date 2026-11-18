@@ -308,7 +308,7 @@ impl Diagnostics {
 			.scope
 			.len()
 			.saturating_add(label.len())
-			.saturating_add(11);
+			.saturating_add("[Didcord ] \n".len());
 		if self.remaining == 0 || bytes > self.bytes {
 			return;
 		}
@@ -3486,16 +3486,17 @@ mod member_tests {
 		// Byte accounting includes UTF-8 and formatting, independently of the line cap.
 		output.clear();
 		let mut short = Diagnostics::new("members", true);
-		short.bytes = 20;
+		let line = "[Didcord members] \u{e9}\n";
+		short.bytes = line.len();
 		short.record_to("\u{e9}", &mut output);
 		short.record_to("another line", &mut output);
-		assert_eq!(output, "[Didcord members] \u{e9}\n".as_bytes());
+		assert_eq!(output, line.as_bytes());
 		assert_eq!((short.remaining, short.bytes), (63, 0));
 		static OVERSIZED: [u8; 8192] = [b'x'; 8192];
 		let mut oversized = Diagnostics::new("gateway", true);
 		oversized.record_to(std::str::from_utf8(&OVERSIZED).unwrap(), &mut output);
 		assert_eq!(oversized.remaining, 64);
-		assert_eq!(output.len(), 20);
+		assert_eq!(output.len(), line.len());
 
 		struct Closed;
 		impl std::io::Write for Closed {
