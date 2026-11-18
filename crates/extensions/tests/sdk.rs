@@ -1,5 +1,5 @@
-use extensions::{Action, Capability, ExtensionKind, Invocation, Manifest, Output, Surface};
 use didcord_extension_sdk as sdk;
+use extensions::{Action, Capability, ExtensionKind, Invocation, Manifest, Output, Surface};
 
 /// Builds a one-action plugin manifest whose capabilities are those the action's surface needs.
 fn manifest(action: &str, surface: Surface) -> Manifest {

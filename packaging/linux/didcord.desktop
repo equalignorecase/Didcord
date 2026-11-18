@@ -4,6 +4,6 @@ Name=Didcord
 Comment=Experimental unofficial native Discord client
 Exec=didcord
 Icon=didcord
-StartupWMClass=cz.viceverse.didcord
+StartupWMClass=io.github.equalignorecase.didcord
 Terminal=false
 Categories=Network;InstantMessaging;

@@ -141,7 +141,7 @@ body:
 
         **Flatpak:**
         ```sh
-        flatpak run --env=DIDCORD_VOICE_DIAGNOSTICS=1 --env=DIDCORD_FRAME_DIAGNOSTICS=1 cz.viceverse.didcord 2> didcord-diagnostics.log
+        flatpak run --env=DIDCORD_VOICE_DIAGNOSTICS=1 --env=DIDCORD_FRAME_DIAGNOSTICS=1 io.github.equalignorecase.didcord 2> didcord-diagnostics.log
         ```
 
         Voice timing reports appear about every five seconds and stop after a bounded capture;

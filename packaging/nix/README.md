@@ -9,7 +9,7 @@ nix run .#didcord
 nix develop        # cargo, rustc and the native build inputs
 ```
 
-Linux installs `result/bin/didcord`, a `cz.viceverse.didcord.desktop` entry and icons.
+Linux installs `result/bin/didcord`, a `io.github.equalignorecase.didcord.desktop` entry and icons.
 macOS installs `result/Applications/Didcord.app` with `result/bin/didcord` linking to
 the bundle executable. Both include the notices, font/asset licenses and the
 corresponding MPL-2.0 hpke-rs source under `result/share/doc/didcord` (inside the

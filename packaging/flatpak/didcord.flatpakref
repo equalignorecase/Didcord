@@ -1,5 +1,5 @@
 [Flatpak Ref]
-Name=cz.viceverse.didcord
+Name=io.github.equalignorecase.didcord
 Branch=master
 Title=Didcord
 Comment=Fast, secure and lightweight native Discord client

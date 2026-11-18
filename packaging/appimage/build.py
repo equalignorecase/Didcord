@@ -50,13 +50,13 @@ def build(root, version):
         stage_payload(root, appdir)
         shutil.copyfile("packaging/appimage/AppRun", appdir / "AppRun")
         (appdir / "AppRun").chmod(0o755)
-        shutil.copyfile("packaging/linux/didcord.desktop", appdir / "cz.viceverse.didcord.desktop")
+        shutil.copyfile("packaging/linux/didcord.desktop", appdir / "io.github.equalignorecase.didcord.desktop")
         shutil.copyfile("packaging/linux/hicolor/256x256/apps/didcord.png", appdir / "didcord.png")
         doc = appdir / "usr/share/doc/didcord"
         shutil.copyfile("packaging/appimage/README.md", doc / "AppImage-README.md")
         shutil.copyfile("packaging/appimage/RUNTIME-LICENSE", doc / "licenses/AppImage-runtime.txt")
         (doc / "AppImage-host-libraries.txt").write_text(libraries, encoding="utf-8")
-        subprocess.run(["desktop-file-validate", str(appdir / "cz.viceverse.didcord.desktop")], check=True)
+        subprocess.run(["desktop-file-validate", str(appdir / "io.github.equalignorecase.didcord.desktop")], check=True)
         candidate = temporary / name
         subprocess.run([str(appimagetool), "--runtime-file", str(runtime),
                         "--updateinformation", information, "--file-url", url,

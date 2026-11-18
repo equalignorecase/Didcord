@@ -525,8 +525,8 @@ async fn portal(
 		.await?;
 	// A host install has no portal app ID until this connection registers one; Flatpak skips
 	// it. Portals without the Registry interface, or without an installed
-	// cz.viceverse.didcord.desktop entry, reject it, so the session request still proceeds.
-	if let Ok(app_id) = "cz.viceverse.didcord".parse() {
+	// io.github.equalignorecase.didcord.desktop entry, reject it, so the session request still proceeds.
+	if let Ok(app_id) = "io.github.equalignorecase.didcord".parse() {
 		match tokio::time::timeout(
 			std::time::Duration::from_secs(5),
 			ashpd::register_host_app_with_connection(connection.clone(), app_id),

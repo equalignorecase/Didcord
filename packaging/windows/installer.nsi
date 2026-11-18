@@ -15,9 +15,9 @@ SetCompressor /SOLID lzma
 
 !define PRODUCT_NAME "Didcord"
 !define PRODUCT_PUBLISHER "Didcord contributors"
-!define PRODUCT_WEB_SITE "https://github.com/ViceVerse-cz/Serein"
+!define PRODUCT_WEB_SITE "https://github.com/equalignorecase/Didcord"
 !define APP_EXE "didcord.exe"
-!define APP_ID "cz.viceverse.didcord"
+!define APP_ID "io.github.equalignorecase.didcord"
 
 !ifndef VERSION
   !define VERSION "0.1.0"

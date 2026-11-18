@@ -851,7 +851,7 @@ The owner explicitly withdrew the no-storage policy on 2026-09-09. Local files, 
 
 | Data | Location / bound | Removal |
 |---|---|---|
-| Discord token | OS credential store by default, service `cz.viceverse.didcord`; packaged builds use account `discord-session` for the session restored on launch and `discord-session.<account id>` for each remembered account, while default source builds use the corresponding `discord-session.development` names; at most 2048 bytes each. A per-account entry is written once, when the roster records none, and rewritten only for a token the owner just supplied: on macOS every access to an existing entry is governed by that item's keychain ACL | Explicit logout / Forget saved login removes both entries for that build profile's account; forgetting or pruning a saved account removes its per-account entry; invalid-token expiry also requests deletion. The no-keyring plaintext fallback below shares these removal paths |
+| Discord token | OS credential store by default, service `io.github.equalignorecase.didcord`; packaged builds use account `discord-session` for the session restored on launch and `discord-session.<account id>` for each remembered account, while default source builds use the corresponding `discord-session.development` names; at most 2048 bytes each. A per-account entry is written once, when the roster records none, and rewritten only for a token the owner just supplied: on macOS every access to an existing entry is governed by that item's keychain ACL | Explicit logout / Forget saved login removes both entries for that build profile's account; forgetting or pruning a saved account removes its per-account entry; invalid-token expiry also requests deletion. The no-keyring plaintext fallback below shares these removal paths |
 | Remembered accounts (switcher) | `accounts` table in `client.sqlite3`: at most 8 rows of account ID, username, display name (64 bytes each), avatar hash, last-use timestamp and a flag recording whether the credential store holds that account's entry; no token | Logging out of, or forgetting, that account; the least recently used row is pruned past 8, taking its token and cached data with it |
 | History and drafts | `DIDCORD_DATA_DIR/client.sqlite3` when an absolute override is set; otherwise `dirs::data_local_dir()/didcord-development/client.sqlite3` for default source builds and `dirs::data_local_dir()/didcord/client.sqlite3` for packaged builds | Clear cached history also clears service images and keeps drafts; logout clears the authenticated account’s history and drafts |
 | Messages | 500 per window, at most 20 stored channel windows globally, 48 MiB estimated text/metadata; SQLite main database capped at 64 MiB. A window that reaches its channel's first message also stores that message ID, so the channel introduction can show with the cached window | Oldest touched channel evicted transactionally, with its first-message ID |
@@ -1697,7 +1697,7 @@ are persisted, and no background pagination or new queue is introduced.
 ### Opt-in macOS startup
 
 The existing startup worker writes only
-`~/Library/LaunchAgents/cz.viceverse.didcord.startup.plist`, at most 16 KiB,
+`~/Library/LaunchAgents/io.github.equalignorecase.didcord.startup.plist`, at most 16 KiB,
 with an absolute executable path and fixed autostart/minimized flags. Reads are
 bounded to 16 KiB; unknown or moved entries report an error. Enabling atomically
 replaces this file using a private sibling temporary file; disabling removes it.

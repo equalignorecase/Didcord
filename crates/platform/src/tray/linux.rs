@@ -379,13 +379,13 @@ mod tests {
 	#[test]
 	fn flatpak_id_selects_the_exported_symbolic_icon() {
 		assert_eq!(
-			symbolic_icon_name(Some("cz.viceverse.didcord"), false).as_deref(),
-			Some("cz.viceverse.didcord-symbolic")
+			symbolic_icon_name(Some("io.github.equalignorecase.didcord"), false).as_deref(),
+			Some("io.github.equalignorecase.didcord-symbolic")
 		);
 		// An installed native icon must not replace a valid Flatpak id.
 		assert_eq!(
-			symbolic_icon_name(Some("cz.viceverse.didcord"), true).as_deref(),
-			Some("cz.viceverse.didcord-symbolic")
+			symbolic_icon_name(Some("io.github.equalignorecase.didcord"), true).as_deref(),
+			Some("io.github.equalignorecase.didcord-symbolic")
 		);
 	}
 

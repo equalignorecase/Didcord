@@ -758,7 +758,7 @@ fn verify_mac(candidate: &Path, installed: &Path) -> Result<(), String> {
 	}
 	let old = identity(installed)?;
 	let new = identity(candidate)?;
-	if old != new || new.1 != "cz.viceverse.didcord" {
+	if old != new || new.1 != "io.github.equalignorecase.didcord" {
 		return Err("The update was not signed by this Didcord publisher.".into());
 	}
 	let status = Command::new("/usr/sbin/spctl")

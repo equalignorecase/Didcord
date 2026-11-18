@@ -11,12 +11,12 @@ use std::sync::{
 	any(target_os = "windows", target_os = "linux"),
 	not(feature = "development-data")
 ))]
-const NAME: &str = "cz.viceverse.didcord";
+const NAME: &str = "io.github.equalignorecase.didcord";
 #[cfg(all(
 	any(target_os = "windows", target_os = "linux"),
 	feature = "development-data"
 ))]
-const NAME: &str = "cz.viceverse.didcord.development";
+const NAME: &str = "io.github.equalignorecase.didcord.development";
 
 pub enum Launch {
 	Primary(Instance),

@@ -584,7 +584,7 @@ fn main() -> eframe::Result {
 				)
 				.with_min_inner_size(app_settings::MIN_WINDOW_SIZE.map(|size| size as f32))
 				.with_active(!start_minimized)
-				.with_app_id("cz.viceverse.didcord");
+				.with_app_id("io.github.equalignorecase.didcord");
 			#[cfg(any(target_os = "windows", target_os = "linux"))]
 			let builder = builder
 				.with_icon(eframe::icon_data::from_png_bytes(icon).expect("bundled app icon"));

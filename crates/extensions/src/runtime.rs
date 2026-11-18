@@ -39,13 +39,15 @@ fn module(engine: &Engine, bytes: &[u8]) -> Result<Module, Error> {
 		return Err(Error::Module);
 	}
 	if !matches!(module.get_export("memory"), Some(ExternType::Memory(_)))
-		|| !has_export(&module, &ALLOC_EXPORTS, FuncType::new([ValType::I32], [ValType::I32]))
 		|| !has_export(
 			&module,
-			&INVOKE_EXPORTS,
-			FuncType::new([ValType::I32, ValType::I32], [ValType::I64]),
-		)
-	{
+			&ALLOC_EXPORTS,
+			FuncType::new([ValType::I32], [ValType::I32]),
+		) || !has_export(
+		&module,
+		&INVOKE_EXPORTS,
+		FuncType::new([ValType::I32, ValType::I32], [ValType::I64]),
+	) {
 		return Err(Error::Module);
 	}
 	Ok(module)

@@ -246,15 +246,15 @@ dialog, move focus to another application and use Toggle Mute/Toggle Deafen.
 The mute/deafen intent should change when returning to Didcord. Flatpak needs a host
 portal backend implementing GlobalShortcuts; the encoding regression test does not
 verify compositor approval or delivery on a particular desktop. Outside Flatpak, Didcord
-registers the portal app ID `cz.viceverse.didcord` through the host Registry
-(xdg-desktop-portal 1.19+), which needs the installed `cz.viceverse.didcord.desktop` entry;
+registers the portal app ID `io.github.equalignorecase.didcord` through the host Registry
+(xdg-desktop-portal 1.19+), which needs the installed `io.github.equalignorecase.didcord.desktop` entry;
 source runs and unintegrated AppImages without it fall back to focused input. Shortcut IDs
 are stable per action (`toggle-mute`, `toggle-deafen`, `push-to-talk`, `push-to-mute`);
 extra triggers for one action are numbered, such as `toggle-mute-2`. Hyprland only delivers
 portal shortcuts to keys bound in its config and does not apply the suggested trigger, so
 the check above needs a bind such as
-`bind = CTRL SHIFT, M, global, cz.viceverse.didcord:toggle-mute`. Update existing binds that
-used the earlier `cz.viceverse.didcord:didcord-N` IDs.
+`bind = CTRL SHIFT, M, global, io.github.equalignorecase.didcord:toggle-mute`. Update existing binds that
+used the earlier `io.github.equalignorecase.didcord:didcord-N` IDs.
 
 Native emoji use eframe system-font fallback and installed OS color fonts. macOS
 Apple Color Emoji was visually checked with a synthetic moon status on September
@@ -369,7 +369,7 @@ a portable installation, or re-enable it after moving the executable.
 Minimized launches stay in the taskbar even when the saved tray preference is enabled;
 the tray can attach safely after a minimized launch. Tray failures leave the window
 recoverable. Without a tray icon the Close button still exits, and the tray Quit action retains unsaved
-work checks. macOS registers a per-user `~/Library/LaunchAgents/cz.viceverse.didcord.startup.plist`
+work checks. macOS registers a per-user `~/Library/LaunchAgents/io.github.equalignorecase.didcord.startup.plist`
 for the next graphical login, with the same launch flags. Turning it off removes only
 that file. It does not launch a second client when enabled or restart after Quit.
 Re-enable startup after moving the executable; disable it before uninstalling. macOS

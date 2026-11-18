@@ -190,8 +190,8 @@ in
             ''
             + lib.optionalString isLinux ''
                 install -Dm444 packaging/linux/didcord.desktop \
-                  $out/share/applications/cz.viceverse.didcord.desktop
-                substituteInPlace $out/share/applications/cz.viceverse.didcord.desktop \
+                  $out/share/applications/io.github.equalignorecase.didcord.desktop
+                substituteInPlace $out/share/applications/io.github.equalignorecase.didcord.desktop \
                   --replace-fail "Exec=didcord" "Exec=$out/bin/didcord"
                 mkdir -p $out/share/icons
                 cp -R packaging/linux/hicolor $out/share/icons/

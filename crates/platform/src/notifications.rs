@@ -410,7 +410,7 @@ fn authorize() -> Status {
 	{
 		use windows::{UI::Notifications::ToastNotificationManager, core::HSTRING};
 		let notifier = ToastNotificationManager::CreateToastNotifierWithId(&HSTRING::from(
-			"cz.viceverse.didcord",
+			"io.github.equalignorecase.didcord",
 		));
 		match notifier {
 			Ok(notifier) => windows_setting_status(notifier.Setting(), windows_shortcut_exists()),
@@ -518,7 +518,7 @@ fn show(alert: &Alert, activation: Activation) -> Result<NotificationHandle, ()>
 	#[cfg(target_os = "windows")]
 	{
 		use tauri_winrt_notification::{IconCrop, Toast};
-		let mut toast = Toast::new("cz.viceverse.didcord")
+		let mut toast = Toast::new("io.github.equalignorecase.didcord")
 			.title(&alert.title)
 			.text1(&alert.body)
 			.on_activated(move |_| {
@@ -570,7 +570,7 @@ fn close(outstanding: &mut Option<NotificationHandle>) {
 	if outstanding.take().is_some() {
 		use windows::{UI::Notifications::ToastNotificationManager, core::HSTRING};
 		let _ = ToastNotificationManager::History()
-			.and_then(|history| history.ClearWithId(&HSTRING::from("cz.viceverse.didcord")));
+			.and_then(|history| history.ClearWithId(&HSTRING::from("io.github.equalignorecase.didcord")));
 	}
 }
 

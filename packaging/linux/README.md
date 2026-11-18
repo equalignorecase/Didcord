@@ -112,7 +112,7 @@ logs, and stale license files. Temporary files are removed when packaging finish
 or raises an error.
 
 The archive installs `/usr/bin/didcord`, a launcher in
-`/usr/share/applications/cz.viceverse.didcord.desktop`, and notices and licenses under
+`/usr/share/applications/io.github.equalignorecase.didcord.desktop`, and notices and licenses under
 `/usr/share/doc/didcord`. No maintainer
 scripts, background updater, automatic launch or user-profile writes are added.
 For a deliberate manual installation, use the local file:

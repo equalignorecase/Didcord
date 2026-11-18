@@ -49,7 +49,7 @@ def stage_payload(root, stage, prefix="usr"):
         raise ValueError("Installation prefix must be usr or app")
     doc = stage / prefix / "share/doc/didcord"
     copy(root / "didcord", stage / prefix / "bin/didcord")
-    desktop = stage / prefix / "share/applications/cz.viceverse.didcord.desktop"
+    desktop = stage / prefix / "share/applications/io.github.equalignorecase.didcord.desktop"
     desktop.parent.mkdir(parents=True)
     desktop.write_text(Path("packaging/linux/didcord.desktop").read_text(), encoding="utf-8")
     copy(Path("packaging/linux/hicolor"), stage / prefix / "share/icons/hicolor")
@@ -102,7 +102,7 @@ def smoke(package, stage, temporary, version, architecture, depends):
     checked("dpkg-deb", "--control", str(package), str(control))
     if payload_files(control) != ["control"]:
         raise ValueError("Unexpected control files or maintainer scripts")
-    checked("desktop-file-validate", str(extracted / "usr/share/applications/cz.viceverse.didcord.desktop"))
+    checked("desktop-file-validate", str(extracted / "usr/share/applications/io.github.equalignorecase.didcord.desktop"))
     libraries = output("ldd", str(extracted / "usr/bin/didcord"))
     if "not found" in libraries:
         raise ValueError(f"Unresolved packaged executable dependencies:\n{libraries}")
@@ -166,7 +166,7 @@ def package(root, application_version):
             encoding="utf-8")
         for path in [stage, *stage.rglob("*")]:
             path.chmod(0o755 if path.is_dir() or path == stage / "usr/bin/didcord" else 0o644)
-        checked("desktop-file-validate", str(stage / "usr/share/applications/cz.viceverse.didcord.desktop"))
+        checked("desktop-file-validate", str(stage / "usr/share/applications/io.github.equalignorecase.didcord.desktop"))
         artifact = root / f"didcord_{version}_{architecture}.deb"
         candidate = temporary / artifact.name
         checked("dpkg-deb", "--root-owner-group", "-Zxz", "--build", str(stage), str(candidate))
@@ -223,7 +223,7 @@ def native_package(root, application_version, format):
         temporary = Path(directory).resolve()
         stage = temporary / "payload"
         stage_payload(root, stage)
-        checked("desktop-file-validate", str(stage / "usr/share/applications/cz.viceverse.didcord.desktop"))
+        checked("desktop-file-validate", str(stage / "usr/share/applications/io.github.equalignorecase.didcord.desktop"))
         libraries = output("ldd", str(stage / "usr/bin/didcord"))
         if "not found" in libraries:
             raise ValueError(f"Unresolved packaged executable dependencies:\n{libraries}")
@@ -265,7 +265,7 @@ def rpm_package(temporary, stage, application_version, distro):
         "Unofficial, experimental, and not endorsed by Discord.\n"
         "\n%install\nmkdir -p %{buildroot}\ncp -a %{_didcord_payload}/. %{buildroot}/\n"
         "\n%files\n%defattr(-,root,root,-)\n/usr/bin/didcord\n"
-        "/usr/share/applications/cz.viceverse.didcord.desktop\n/usr/share/doc/didcord\n"
+        "/usr/share/applications/io.github.equalignorecase.didcord.desktop\n/usr/share/doc/didcord\n"
         + "".join(f"/{name}\n" for name in payload_files(stage) if name.startswith("usr/share/icons/")),
         encoding="utf-8")
     # Paths are passed as RPM macro values; reject macro/shell metacharacters.

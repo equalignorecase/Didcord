@@ -68,7 +68,7 @@ jobs:
       - name: Verify Linux desktop assets
         if: runner.os == 'Linux'
         run: |
-          test -f result/share/applications/cz.viceverse.didcord.desktop
+          test -f result/share/applications/io.github.equalignorecase.didcord.desktop
           test -f result/share/icons/hicolor/256x256/apps/didcord.png
       - name: Verify macOS app bundle
         if: runner.os == 'macOS'

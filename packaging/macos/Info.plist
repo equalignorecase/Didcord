@@ -3,7 +3,7 @@
 <plist version="1.0"><dict>
 <key>CFBundleName</key><string>Didcord</string>
 <key>CFBundleDisplayName</key><string>Didcord</string>
-<key>CFBundleIdentifier</key><string>cz.viceverse.didcord</string>
+<key>CFBundleIdentifier</key><string>io.github.equalignorecase.didcord</string>
 <key>CFBundleExecutable</key><string>didcord</string>
 <key>CFBundleIconFile</key><string>Didcord.icns</string>
 <key>CFBundleIconName</key><string>Didcord</string>
