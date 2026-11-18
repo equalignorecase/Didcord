@@ -23,7 +23,7 @@ override the application's requested size. To allow Didcord's saved width, add t
 
 ```kdl
 window-rule {
-    match app-id=r#"^cz\.viceverse\.didcord$"#
+    match app-id=r#"^io\.github\.equalignorecase\.didcord$"#
     default-column-width {}
 }
 ```
@@ -33,6 +33,25 @@ or floating-window rules. See [Niri window rules](https://github.com/niri-wm/nir
 and [Niri's application-selected width](https://github.com/niri-wm/niri/wiki/Configuration:-Layout#default-column-width),
 and [winit's platform limitations](https://docs.rs/winit/0.30.13/winit/window/struct.Window.html#method.outer_position).
 Native restart/resize behavior on Niri and other Linux desktops remains unverified.
+
+## Upgrading from an earlier app identity
+
+Didcord uses `io.github.equalignorecase.didcord` for its native App ID and OS
+credential-store service. Update compositor rules and desktop shortcuts that still
+use an earlier identity. The Niri rule above matches the current App ID.
+
+The default local-data directory is `didcord` for packaged builds and
+`didcord-development` for default source builds. An absolute `DIDCORD_DATA_DIR`
+overrides that directory; it does not change the credential-store service or the
+build profile's saved-login entry names. See [Storage Policy](storage-policy.md)
+for platform paths and credential names.
+
+There is no automatic import from Serein data directories or earlier credential
+services. A changed namespace can therefore appear as a fresh installation, even
+when older files and saved logins still exist. Keep the earlier installation and
+its data until the new one is verified; use the normal login flow to save a session
+under the new identity. Do not copy tokens into files to migrate a saved login.
+Cross-identity upgrades and native credential prompts remain unverified.
 
 ## Build and runtime support
 
@@ -236,7 +255,7 @@ verification on the affected system.
 
 `cargo xtask package` stages the standard release including voice under `dist` (`dist/Didcord.app` on macOS). The macOS bundle includes its microphone-use description; actual microphone permission, capture/playback, device switching and sleep/resume have not been exercised. Windows x64 voice release packaging and synthetic protocol/audio tests pass; physical audio and live calls remain unverified on Windows. Linux x64 text/voice release builds and Debian package smoke passed on Ubuntu 26.04 under WSL2; native Linux desktop/audio runtime remains unverified. CMake is a source-build dependency, not a runtime voice service.
 
-Device choices, voice keybinds and the owner's mute/deafen intent are device-local. Mute and deafen can be changed while idle, survive restart and apply to the first voice-state packet when the next call is joined. Voice bindings use native global registration on supported Windows/macOS/Linux X11 setups and the desktop GlobalShortcuts portal on Wayland when they include a modifier. Unmodified focused Push to Talk (V by default) observes key state without consuming typed text and is never registered as an OS-global shortcut. Missing/denied portal access and unavailable/conflicting registrations fall back to focused input. Use headphones because there is no acoustic echo cancellation. No signing, desktop integration, physical audio or live-compatibility claim follows from compilation alone.
+Device choices, voice keybinds and the owner's mute/deafen intent are device-local. Mute and deafen can be changed while idle, survive restart and apply to the first voice-state packet when the next call is joined. Voice bindings use native global registration on supported Windows/macOS/Linux X11 setups and the desktop GlobalShortcuts portal on Wayland when they include a modifier. Unmodified focused Push to Talk (V by default) observes key state without consuming typed text and is never registered as an OS-global shortcut. Missing/denied portal access and unavailable/conflicting registrations fall back to focused input. Voice Isolation enables AEC3 acoustic echo cancellation; Studio bypasses processing, and Custom exposes an echo-cancellation control. Use headphones for device testing; physical echo-cancellation quality remains unverified. See [input profiles](voice.md#input-profiles-and-noise-suppression). No signing, desktop integration, physical audio or live-compatibility claim follows from compilation alone.
 
 Wayland shortcut requests use the [XDG shortcut specification](https://specifications.freedesktop.org/shortcuts/latest/)
 and XKB keysyms (for example `CTRL+SHIFT+m`, `CTRL+1`, and `CTRL+Down`),
