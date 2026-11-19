@@ -61,7 +61,7 @@ jobs:
             $data = @{}
             foreach ($entry in $xml.Event.EventData.Data) { $data[$entry.Name] = $entry.'#text' }
             $data | Format-List | Out-File fault-fields.txt -Append
-            $symbolizer = 'C:\Program Files\LLVMin\llvm-symbolizer.exe'
+            $symbolizer = 'C:\Program Files\LLVM\bin\llvm-symbolizer.exe'
             if ((Test-Path $symbolizer) -and (Test-Path $data['ModulePath'])) {
               & $symbolizer --relative-address "--obj=$($data['ModulePath'])" "0x$($data['FaultingOffset'])" 2>&1 | Out-File symbolized-crash.txt -Append
             }
