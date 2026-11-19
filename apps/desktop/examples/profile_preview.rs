@@ -842,7 +842,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let args: Vec<_> = std::env::args().skip(1).collect();
 	let value = |prefix: &str| args.iter().find_map(|arg| arg.strip_prefix(prefix));
 	if !args.iter().any(|arg| arg == "--demo") {
-		return Err("Usage: profile_preview --demo [--output=PATH.png | --smoke | --interactive] [--page=stickers|slash-commands|slash-command-search|slash-command-options|profile|markdown|embeds|channel-links|channel-link-replies|profile-card|collectibles|member-tags|dm-tags|account|appearance|storage|updates|general|chat|language|notifications|keybinds|extensions|server|server-engagement|server-safety|server-emoji|server-stickers|server-members|server-roles|server-invites|server-integrations|server-audit-log] [--command=help|weather] [--themes] [--extension=ID] [--thumbnail] [--proxy-artwork] [--width=1120] [--height=760] [--scroll=PIXELS] [--toolbar-hover=normal|shift] [--close-settings] [--name-colors] [--keybinds-custom] [--light] [--toasts] [--compact] [--transparency=0..100]".into());
+		return Err("Usage: profile_preview --demo [--output=PATH.png | --smoke | --interactive] [--page=stickers|slash-commands|slash-command-search|slash-command-options|profile|markdown|embed-markdown|embeds|channel-links|channel-link-replies|profile-card|collectibles|member-tags|dm-tags|account|appearance|storage|updates|general|chat|language|notifications|keybinds|extensions|server|server-engagement|server-safety|server-emoji|server-stickers|server-members|server-roles|server-invites|server-integrations|server-audit-log] [--command=help|weather] [--themes] [--extension=ID] [--thumbnail] [--proxy-artwork] [--width=1120] [--height=760] [--scroll=PIXELS] [--toolbar-hover=normal|shift] [--close-settings] [--name-colors] [--keybinds-custom] [--light] [--toasts] [--compact] [--transparency=0..100]".into());
 	}
 	let smoke = args.iter().any(|arg| arg == "--smoke");
 	let interactive = args.iter().any(|arg| arg == "--interactive");
@@ -863,6 +863,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 			| "collectibles"
 			| "member-tags"
 			| "markdown"
+			| "embed-markdown"
 			| "embeds"
 			| "channel-links"
 			| "channel-link-replies"
@@ -894,7 +895,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 			| "forum-settings"
 			| "friends"
 	) {
-		return Err("Page must be profile, markdown, embeds, channel-links, channel-link-replies, profile-card, collectibles, member-tags, dm-tags, account, appearance, storage, general, chat, language, notifications, keybinds, extensions, slash-commands, slash-command-search, slash-command-options, server, server-engagement, server-safety, server-emoji, server-stickers, server-members, server-roles, server-invites, server-integrations or server-audit-log".into());
+		return Err("Page must be profile, markdown, embed-markdown, embeds, channel-links, channel-link-replies, profile-card, collectibles, member-tags, dm-tags, account, appearance, storage, general, chat, language, notifications, keybinds, extensions, slash-commands, slash-command-search, slash-command-options, server, server-engagement, server-safety, server-emoji, server-stickers, server-members, server-roles, server-invites, server-integrations or server-audit-log".into());
 	}
 	let slash_command = value("--command=").unwrap_or("help").to_owned();
 	if !matches!(slash_command.as_str(), "help" | "weather") {
@@ -1071,13 +1072,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 					.seed_cache(messages.into_iter().chain(std::iter::once(clip)).collect())
 					.expect("valid synthetic embeds");
 			}
-			if page == "markdown" {
+			if matches!(page.as_str(), "markdown" | "embed-markdown") {
 				let channel = state.selected.expect("synthetic markdown conversation");
 				let mut message = test_support::message(600, channel);
 				message.content =
 					include_str!("../../../crates/ui/tests/fixtures/prune-announcement.txt").into();
 				message.attachments.clear();
 				message.embeds.clear();
+				if page == "embed-markdown" {
+					message.content = "Synthetic Markdown comparison: **bold in chat**".into();
+					message.embeds = vec![model::Embed {
+						kind: "rich".into(),
+						title: Some("Synthetic ranking".into()),
+						description: Some("Description: #1 **synthetic#99999**".into()),
+						fields: vec![model::EmbedField {
+							name: "#1 **synthetic#99999**".into(),
+							value: "Value: **bold**, *italic*, `**literal code**`".into(),
+							inline: false,
+						}],
+						..Default::default()
+					}];
+				}
 				message.reactions = Some(vec![]);
 				state.timeline.clear();
 				state
@@ -1209,6 +1224,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 					| "dm-tags" | "dm-intro"
 					| "channel-intro"
 					| "post-intro" | "markdown"
+					| "embed-markdown"
 					| "channel-links"
 					| "channel-link-replies"
 					| "embeds"

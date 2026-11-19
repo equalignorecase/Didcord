@@ -1,5 +1,19 @@
 # Performance findings
 
+## Embed field Markdown — November 20, 2026
+
+The scoped field-name formatter was compared with `94fcf51` on macOS 27.2.1, Apple M1 /
+8 GiB, Metal and Retina 2×, using the same new offline `embed-markdown` fixture. Each
+release UI run used eight seconds of warmup and 21 samples over approximately 10.28 seconds.
+CPU was 1.0695% before and 1.0698% after (one core); median/peak sampled RSS was
+146,480 KiB before and 146,384 KiB after. These short single runs show no meaningful change;
+GPU/helper allocations and latency are unmeasured.
+
+Normal voice-enabled release packages both contained a 77,088,016-byte executable and
+82,725,783-byte `.app` payload. Separately compressed level-9 staging ZIPs changed from
+51,944,993 to 51,945,458 bytes (+465). No dependency or cache bound changed.
+See [the method, raw UI readings and synthetic captures](pr-evidence/embed-field-markdown/README.md).
+
 ## Rebrand validation baseline — November 18, 2026
 
 Offline macOS 27.2 arm64, Apple M1 / 8 GiB, Retina 2× and Metal, with pinned Rust

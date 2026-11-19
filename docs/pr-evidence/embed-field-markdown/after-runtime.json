@@ -1,0 +1,11 @@
+{
+  "cpu_percent_one_core": 1.0697702798457598,
+  "median_rss_kib": 146384,
+  "peak_sampled_rss_kib": 146384,
+  "samples": 21,
+  "measured_seconds": 10.282581416999165,
+  "warmup_seconds": 8,
+  "os": "27.2.1",
+  "cpu": "Apple M1",
+  "memory_bytes": 8589934592
+}

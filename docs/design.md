@@ -159,6 +159,10 @@ navigation; the timeline centers and briefly highlights the exact target.
 `--features demo -- --demo --demo-message-links` exercises these states with an offline
 fixture; `--demo-light` selects the light appearance.
 
+Embed field names use the same bounded Markdown renderer as descriptions and values, with
+a semibold base face. Paired `**` markers format the name rather than appearing literally;
+inline code keeps its literal contents. The field value retains the normal body face.
+
 Icons are [Phosphor Icons](https://phosphoricons.com) 2.1.1 (MIT) in the fill/bold weights,
 rasterized once into `assets/icons/atlas.png` (37 white glyphs in 64px cells) and tinted at
 draw time by `crates/ui/src/icons.rs`; there is no icon font. Standard icon buttons use a 70%
