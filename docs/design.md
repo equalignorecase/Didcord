@@ -39,10 +39,11 @@ palette surfaces in both message and forum composers, independently of chat tran
 
 ## Brand mark and server rail
 
-The application mark is the Didcord chat-wave (`assets/brand/`), not a third-party logo. Its
-silhouette is rasterized into the shared icon atlas as `didcord-mark` and painted wherever the
-client identifies itself: the loading screen, the sign-in card and its button, the login header
-and the Direct Messages tile at the top of the server rail.
+The application mark is the Didcord mascot (`assets/brand/`), not a third-party logo. Its flat
+vector is rasterized into the shared icon atlas as `didcord-mark` for the login header,
+Updates card and Direct Messages tile at the top of the server rail. The sign-in card and
+its button use the bundled full-colour platform artwork. The macOS and Linux trays use the
+flat mascot without its plate, retaining transparent eyes and mouth when the OS recolors it.
 
 Server tiles keep one constant rounded-square silhouette instead of morphing between a circle and
 a squircle. Selection and unread state are shown by `notifications::rail_indicator`: a 3px accent

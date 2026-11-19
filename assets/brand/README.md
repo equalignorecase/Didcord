@@ -1,15 +1,14 @@
 # Didcord brand assets
 
-Didcord's own application mark: a speech bubble carrying an S-shaped wave, in the icy
-blue-to-indigo brand gradient. These files are Didcord design assets, not Apple, Discord or any
+Didcord's own application mark: a smiling pale mascot on a dark blue rounded plate.
+These files are Didcord design assets, not Apple, Discord or any
 other vendor's branding, and no third-party font is embedded in them.
 
-- `didcord.svg` — full-colour gradient mark on its rounded plate; the master vector source.
-- `didcord-flat.svg` — flat (non-gradient) variant for small or low-colour contexts.
-- `didcord-mark.svg` — solid white silhouette, view box trimmed to the mark's bounding box.
+- `didcord-mark.svg` — white vector mascot traced from `didcord-1024.png`, with transparent
+  eyes and mouth and no plate. Its square view box centers the mascot for small glyphs.
   `tools/generate-icons.py` rasterizes this one into the shared icon atlas as `didcord-mark`,
   which the interface tints at draw time.
-- `didcord-1024.png` — 1024×1024 sRGB RGBA preview render of the full-colour mark.
+- `didcord-1024.png` — 1024×1024 sRGB RGBA full-colour artwork.
 - `didcord-tray.png` — 72×72 black-on-transparent render of `didcord-mark.svg`, embedded by
   `crates/platform` as the macOS menu bar template image; macOS tints it per appearance, so only
   its alpha is used. Regenerate with:
@@ -23,6 +22,9 @@ The packaged platform icons built from the same artwork live in `packaging/`
 (`macos/Didcord.icns`, `windows/Didcord.ico`, `linux/hicolor/*`). macOS packaging
 copies the bundled ICNS; Icon Composer sources and appearance variants are not included.
 
-Brand palette: `#8BBEFF` → `#506DDC` → `#2D247C` plate gradient, `#F5FAFF` and `#D1E0FF` waves.
-The interface accent (`design::DEFAULT_PRIMARY_RGB`, `#1a72e8`) is drawn from the same family and
+The Linux `didcord-symbolic.svg` is the same flat mascot with the `ColorScheme-Text` stylesheet
+and `currentColor` fill used by the tray adapter. Keep it synchronized with `didcord-mark.svg`.
+The full-colour platform icons already carry the mascot; do not replace them with the flat mark.
+
+The interface accent (`design::DEFAULT_PRIMARY_RGB`, `#1a72e8`) is in the same blue family and
 is tuned so white text on it keeps a 4.5:1 contrast ratio.

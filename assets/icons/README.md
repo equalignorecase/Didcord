@@ -30,10 +30,10 @@ grid), marks threads; it is rasterized with the Phosphor set and carries no upst
 (MIT, same pinned 2.1.1 package, fetched November 10, 2026) with a 16-unit round-capped X masked
 out of the screen where `monitor-arrow-up` draws its arrow, so it pairs with the share glyph.
 
-- `atlas.png`: 512×896 RGBA, 27,326 bytes after lossless `oxipng -o max --strip all`.
-  SHA-256 `4640a87f8aedbe48af687404ac8f51c63cd7f1d1a782e46bdcf5bd98a07fa929`.
+- `atlas.png`: 512×896 indexed PNG (decoded as RGBA), 30,467 bytes after lossless encoding.
+  SHA-256 `30856adf4fc2c630ed2c2d5e76a2c5f406209f97f8f9893f3681cac89e364e3e`.
 - `index.tsv`: icon name, tab, zero-based cell; SHA-256
-  `06cabde3334f728e164e18f0057b47a0e6c1db1657ff677fa6bca157f3fb824a`.
+  `a8b0a89d8f468e9d1be3f62414ffaa7b13c83ad9e29a37b325cfd1616812d0e3`.
 
 Every upstream SVG's SHA-256 is pinned in `tools/generate-icons.py`, which refuses to build
 from mismatching files. Regenerate from the repository root:
@@ -44,8 +44,8 @@ python3 tools/generate-icons.py --resvg /tmp/resvg-tool/bin/resvg
 ```
 
 PNG compression bytes can vary with the resvg/png versions; decoded pixels and cell indices
-are deterministic. `cargo test -p ui icons` checks that every `Icon` variant maps to a
-distinct, non-blank cell and that the atlas stays below 256 KiB.
+are deterministic. After regeneration, compare decoded cells with the previous atlas so
+unrelated icons and cell indices remain unchanged. Keep the bundled atlas below 256 KiB.
 
 The folder and open-folder glyphs are unmodified Phosphor `folder-fill.svg` and
 `folder-open-fill.svg`, fetched from the same pinned 2.1.1 package on September 11, 2026.
@@ -59,9 +59,9 @@ same pinned 2.1.1 package on September 27, 2026.
 The text context-menu glyphs are unmodified Phosphor `scissors-bold.svg`, `clipboard-text-bold.svg`
 and `selection-all-bold.svg`, fetched from the same pinned 2.1.1 package on November 6, 2026.
 
-The `didcord-mark` cell is our own artwork, not an upstream icon: it is the solid silhouette of
-the Didcord chat-wave from `assets/brand/didcord-mark.svg`, trimmed to its bounding box so it
-matches Phosphor's glyph weight in the cell. It replaced the Discord brand mark that previously
-occupied cell 58; no third-party application logo is bundled any more. `tools/generate-icons.py`
+The `didcord-mark` cell is our own artwork, not an upstream icon: it is the flat mascot from
+`assets/brand/didcord-mark.svg`, centered in a square view box with transparent eyes and mouth.
+It replaces the old chat-wave in cell 58; no third-party application logo is bundled.
+`tools/generate-icons.py`
 pins its SHA-256 like every upstream source and rasterizes it from the repository rather than a
 package mirror.
