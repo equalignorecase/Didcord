@@ -19,35 +19,37 @@ jobs:
       - uses: Swatinem/rust-cache@v2.9.2
         with:
           save-if: true
+          cache-on-failure: true
       - name: Enable bounded native crash evidence
         shell: pwsh
         run: |
-          $path = 'HKCU:\Software\Microsoft\Windows\Windows Error Reporting\LocalDumps'
+          $path = 'HKLM:\Software\Microsoft\Windows\Windows Error Reporting\LocalDumps'
           New-Item -Path $path -Force | Out-Null
           New-ItemProperty -Path $path -Name DumpFolder -Value "$env:RUNNER_TEMP\didcord-crashes" -PropertyType ExpandString -Force | Out-Null
           New-ItemProperty -Path $path -Name DumpType -Value 1 -PropertyType DWord -Force | Out-Null
           New-ItemProperty -Path $path -Name DumpCount -Value 1 -PropertyType DWord -Force | Out-Null
-      - name: Reproduce first unfinished connection test alone
+      - name: Reproduce exact workspace command
         shell: pwsh
         env:
           RUST_BACKTRACE: full
         run: |
-          cargo test --locked -p didcord --bin didcord connection::tests::activity_privacy_waits_for_opt_in_and_propagates_expired_session -- --exact --nocapture --test-threads=1 2>&1 | Tee-Object focused-test.log
+          cargo test --workspace --locked -- --nocapture 2>&1 | Tee-Object workspace-tests.log
           exit $LASTEXITCODE
-      - name: Identify crash in serial desktop suite
+      - name: Compare workspace desktop binary serially
+        if: always()
         shell: pwsh
-        env:
-          RUST_BACKTRACE: full
         run: |
-          cargo test --locked -p didcord --bin didcord -- --nocapture --test-threads=1 2>&1 | Tee-Object serial-tests.log
+          $exe = Get-ChildItem target/debug/deps/didcord-*.exe | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if (-not $exe) { throw 'No desktop test executable' }
+          & $exe.FullName --nocapture --test-threads=1 2>&1 | Tee-Object workspace-desktop-serial-tests.log
           exit $LASTEXITCODE
-      - name: Reproduce parallel desktop suite
+      - name: Compare workspace desktop binary in parallel
+        if: always()
         shell: pwsh
-        env:
-          RUST_BACKTRACE: full
         run: |
+          $exe = Get-ChildItem target/debug/deps/didcord-*.exe | Sort-Object LastWriteTime -Descending | Select-Object -First 1
           for ($attempt = 1; $attempt -le 3; $attempt++) {
-            cargo test --locked -p didcord --bin didcord -- --nocapture 2>&1 | Tee-Object "parallel-tests-$attempt.log"
+            & $exe.FullName --nocapture 2>&1 | Tee-Object "workspace-desktop-parallel-tests-$attempt.log"
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
       - name: Collect crash module evidence
@@ -59,10 +61,10 @@ jobs:
           foreach ($event in $events) {
             $xml = [xml]$event.ToXml()
             $data = @{}
-            foreach ($entry in $xml.Event.EventData.Data) { $data[$entry.Name] = $entry.'#text' }
+            foreach ($entry in $xml.Event.EventData.Data) { $data[$entry.GetAttribute('Name')] = $entry.InnerText }
             $data | Format-List | Out-File fault-fields.txt -Append
             $symbolizer = 'C:\Program Files\LLVM\bin\llvm-symbolizer.exe'
-            if ((Test-Path $symbolizer) -and (Test-Path $data['ModulePath'])) {
+            if ($data['ModulePath'] -and (Test-Path $symbolizer) -and (Test-Path $data['ModulePath'])) {
               & $symbolizer --relative-address "--obj=$($data['ModulePath'])" "0x$($data['FaultingOffset'])" 2>&1 | Out-File symbolized-crash.txt -Append
             }
           }
