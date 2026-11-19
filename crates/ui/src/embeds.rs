@@ -770,11 +770,29 @@ pub fn show(
 										// otherwise collide and clash (visible as egui's debug
 										// "used the same ID" warning in debug builds).
 										column.push_id(field + offset, |column| {
-											column.add(
-												egui::Label::new(RichText::new(&f.name).strong())
-													.wrap()
-													.selectable(true),
-											);
+											column.push_id("name", |column| {
+												let mut font =
+													egui::TextStyle::Body.resolve(column.style());
+												font.family =
+													crate::design::semibold_family(column.ctx());
+												column
+													.style_mut()
+													.text_styles
+													.insert(egui::TextStyle::Body, font);
+												column.visuals_mut().override_text_color =
+													Some(colors.text_strong);
+												// Names occupy the upper half of this embed's 64 cache slots.
+												text(
+													column,
+													message,
+													(part + 32 + (field + offset) as u16, &f.name),
+													cache,
+													opening,
+													profile,
+													card_surface,
+													(images, demo, &state.guilds, &source),
+												);
+											});
 											text(
 												column,
 												message,
@@ -1013,6 +1031,75 @@ pub fn estimated_height(embeds: &[Embed]) -> f32 {
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	#[test]
+	fn ranked_embed_field_names_render_bold_markup_instead_of_asterisks() {
+		fn rendered_text(
+			shape: &egui::Shape,
+			output: &mut String,
+			fonts: &mut Vec<(String, egui::FontFamily)>,
+		) {
+			match shape {
+				egui::Shape::Text(text) => {
+					let job = &text.galley.job;
+					output.push_str(&job.text);
+					fonts.extend(job.sections.iter().map(|section| {
+						(
+							job.text[section.byte_range.start.0..section.byte_range.end.0].into(),
+							section.format.font_id.family.clone(),
+						)
+					}));
+				}
+				egui::Shape::Vec(shapes) => {
+					for shape in shapes {
+						rendered_text(shape, output, fonts);
+					}
+				}
+				_ => {}
+			}
+		}
+		let mut message = test_support::message(1, model::Id(2));
+		message.embeds = vec![Embed {
+			kind: "rich".into(),
+			fields: vec![model::EmbedField {
+				name: "#1 **synthetic#99999** / `**literal**`".into(),
+				value: "Synthetic score".into(),
+				inline: false,
+			}],
+			..Default::default()
+		}];
+		let ctx = egui::Context::default();
+		crate::fonts::install(&ctx);
+		let frame = ctx.run_ui(egui::RawInput::default(), |ui| {
+			show(
+				ui,
+				&message,
+				&mut FormatCache::default(),
+				&mut Avatars::default(),
+				&mut None,
+				&mut DownloadUi::default(),
+				&mut crate::profiles::ProfileSession::default(),
+				&client_core::State::default(),
+				crate::design::MessageCardSurface::Conversation,
+				false,
+			);
+		});
+		let mut text = String::new();
+		let mut fonts = Vec::new();
+		for shape in &frame.shapes {
+			rendered_text(&shape.shape, &mut text, &mut fonts);
+		}
+		frame.drop_without_applying_deltas();
+		assert!(text.contains("#1 synthetic#99999"), "{text}");
+		assert!(!text.contains("**synthetic#99999**"), "{text}");
+		assert!(text.contains("**literal**"), "{text}");
+		assert!(fonts.iter().any(|(text, family)| {
+			text.contains("synthetic#99999") && *family == crate::design::semibold_family(&ctx)
+		}));
+		assert!(fonts.iter().any(|(text, family)| {
+			text.contains("Synthetic score") && *family == egui::FontFamily::Proportional
+		}));
+	}
 
 	/// A link that resolves to a hosted clip carries no poster; the card paints the clip.
 	#[test]
