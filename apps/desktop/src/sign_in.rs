@@ -1151,25 +1151,23 @@ impl Desktop {
 
 /// The Didcord brand logo mark, loaded from bundled brand artwork and painted with rounded corners.
 fn didcord_logo_texture(ctx: &egui::Context) -> egui::TextureHandle {
-	ctx.data_mut(|d| {
-		let id = egui::Id::unique("didcord-brand-logo-mark");
-		d.get_temp::<egui::TextureHandle>(id).unwrap_or_else(|| {
-			const LOGO: &[u8] =
-				include_bytes!("../../../packaging/linux/hicolor/256x256/apps/didcord.png");
-			let img = image::load_from_memory_with_format(LOGO, image::ImageFormat::Png)
-				.expect("bundled didcord logo")
-				.into_rgba8();
-			let size = [img.width() as usize, img.height() as usize];
-			let color_image = egui::ColorImage::from_rgba_unmultiplied(size, &img);
-			let texture = ctx.load_texture(
-				"didcord-brand-logo-mark",
-				color_image,
-				egui::TextureOptions::LINEAR,
-			);
-			d.insert_temp(id, texture.clone());
-			texture
-		})
-	})
+	let id = egui::Id::unique("didcord-brand-logo-mark");
+	if let Some(texture) = ctx.data(|d| d.get_temp::<egui::TextureHandle>(id)) {
+		return texture;
+	}
+	const LOGO: &[u8] = include_bytes!("../../../packaging/linux/hicolor/256x256/apps/didcord.png");
+	let img = image::load_from_memory_with_format(LOGO, image::ImageFormat::Png)
+		.expect("bundled didcord logo")
+		.into_rgba8();
+	let size = [img.width() as usize, img.height() as usize];
+	let color_image = egui::ColorImage::from_rgba_unmultiplied(size, &img);
+	let texture = ctx.load_texture(
+		"didcord-brand-logo-mark",
+		color_image,
+		egui::TextureOptions::LINEAR,
+	);
+	ctx.data_mut(|d| d.insert_temp(id, texture.clone()));
+	texture
 }
 
 fn app_mark(ui: &mut egui::Ui, size: f32) {
@@ -1178,4 +1176,18 @@ fn app_mark(ui: &mut egui::Ui, size: f32) {
 	egui::Image::from_texture((texture.id(), egui::Vec2::splat(size)))
 		.corner_radius((size * 0.22).round() as u8)
 		.paint_at(ui, mark);
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn didcord_logo_texture_loads_without_deadlock() {
+		let ctx = egui::Context::default();
+		let handle = didcord_logo_texture(&ctx);
+		assert_eq!(handle.name(), "didcord-brand-logo-mark");
+		let handle2 = didcord_logo_texture(&ctx);
+		assert_eq!(handle.id(), handle2.id());
+	}
 }
