@@ -18,7 +18,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.99.1
       - uses: Swatinem/rust-cache@v2.9.2
         with:
-          save-if: false
+          save-if: true
       - name: Enable bounded native crash evidence
         shell: pwsh
         run: |
@@ -41,11 +41,31 @@ jobs:
         run: |
           cargo test --locked -p didcord --bin didcord -- --nocapture --test-threads=1 2>&1 | Tee-Object serial-tests.log
           exit $LASTEXITCODE
+      - name: Reproduce parallel desktop suite
+        shell: pwsh
+        env:
+          RUST_BACKTRACE: full
+        run: |
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            cargo test --locked -p didcord --bin didcord -- --nocapture 2>&1 | Tee-Object "parallel-tests-$attempt.log"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
       - name: Collect crash module evidence
         if: always()
         shell: pwsh
         run: |
           Get-WinEvent -FilterHashtable @{LogName='Application'; Id=1000,1001; StartTime=(Get-Date).AddHours(-1)} -ErrorAction SilentlyContinue | Format-List TimeCreated,Message | Out-File crash-events.txt
+          $events = Get-WinEvent -FilterHashtable @{LogName='Application'; Id=1000; StartTime=(Get-Date).AddHours(-1)} -ErrorAction SilentlyContinue
+          foreach ($event in $events) {
+            $xml = [xml]$event.ToXml()
+            $data = @{}
+            foreach ($entry in $xml.Event.EventData.Data) { $data[$entry.Name] = $entry.'#text' }
+            $data | Format-List | Out-File fault-fields.txt -Append
+            $symbolizer = 'C:\Program Files\LLVMin\llvm-symbolizer.exe'
+            if ((Test-Path $symbolizer) -and (Test-Path $data['ModulePath'])) {
+              & $symbolizer --relative-address "--obj=$($data['ModulePath'])" "0x$($data['FaultingOffset'])" 2>&1 | Out-File symbolized-crash.txt -Append
+            }
+          }
           exit 0
       - uses: actions/upload-artifact@v7.0.1
         if: always()
@@ -55,4 +75,8 @@ jobs:
           path: |
             *test*.log
             crash-events.txt
+            fault-fields.txt
+            symbolized-crash.txt
+            target/debug/deps/didcord-*.pdb
+            target/debug/deps/didcord-*.exe
             ${{ runner.temp }}/didcord-crashes/*.dmp
