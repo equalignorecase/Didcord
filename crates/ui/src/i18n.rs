@@ -23,6 +23,7 @@ static CHINESE_TRADITIONAL: LazyLock<LanguageIdentifier> =
 	LazyLock::new(|| "zh-TW".parse().unwrap());
 static CHINESE_SIMPLIFIED: LazyLock<LanguageIdentifier> =
 	LazyLock::new(|| "zh-CN".parse().unwrap());
+static THAI: LazyLock<LanguageIdentifier> = LazyLock::new(|| "th".parse().unwrap());
 #[cfg(not(test))]
 static SYSTEM: LazyLock<Language> =
 	LazyLock::new(|| language_from_tag(sys_locale::get_locale().as_deref().unwrap_or("en-US")));
@@ -62,10 +63,11 @@ pub enum Language {
 	ChineseTraditional,
 	ChineseSimplified,
 	Korean,
+	Thai,
 }
 
 impl Language {
-	pub const ALL: [Self; 15] = [
+	pub const ALL: [Self; 16] = [
 		Self::System,
 		Self::English,
 		Self::Spanish,
@@ -81,6 +83,7 @@ impl Language {
 		Self::ChineseTraditional,
 		Self::ChineseSimplified,
 		Self::Korean,
+		Self::Thai,
 	];
 
 	pub fn from_preference(value: Option<&str>) -> Self {
@@ -99,6 +102,7 @@ impl Language {
 			Some("cs") => Self::Czech,
 			Some("zh-TW") => Self::ChineseTraditional,
 			Some("zh-CN") => Self::ChineseSimplified,
+			Some("th") => Self::Thai,
 			_ => Self::System,
 		}
 	}
@@ -120,6 +124,7 @@ impl Language {
 			Self::Czech => Some("cs"),
 			Self::ChineseTraditional => Some("zh-TW"),
 			Self::ChineseSimplified => Some("zh-CN"),
+			Self::Thai => Some("th"),
 		}
 	}
 
@@ -171,6 +176,7 @@ impl Language {
 			Self::Czech => "Čeština".into(),
 			Self::ChineseTraditional => "\u{7e41}\u{9ad4}\u{4e2d}\u{6587}".into(),
 			Self::ChineseSimplified => "\u{7b80}\u{4f53}\u{4e2d}\u{6587}".into(),
+			Self::Thai => "\u{0e44}\u{0e17}\u{0e22}".into(),
 		}
 	}
 
@@ -196,6 +202,7 @@ impl Language {
 			Self::Czech => include_str!("../locales/cs/main.ftl"),
 			Self::ChineseTraditional => include_str!("../locales/zh-TW/main.ftl"),
 			Self::ChineseSimplified => include_str!("../locales/zh-CN/main.ftl"),
+			Self::Thai => include_str!("../locales/th/main.ftl"),
 			_ => include_str!("../locales/en-US/main.ftl"),
 		}
 	}
@@ -273,6 +280,7 @@ impl Language {
 			Self::Czech => &CZECH,
 			Self::ChineseTraditional => &CHINESE_TRADITIONAL,
 			Self::ChineseSimplified => &CHINESE_SIMPLIFIED,
+			Self::Thai => &THAI,
 			_ => &ENGLISH,
 		}
 	}
@@ -391,6 +399,7 @@ fn language_from_tag(tag: &str) -> Language {
 		"pl" => Language::Polish,
 		"it" => Language::Italian,
 		"cs" => Language::Czech,
+		"th" => Language::Thai,
 		_ => Language::English,
 	}
 }
@@ -406,6 +415,9 @@ mod tests {
 		assert_eq!(language_from_tag("es-MX"), Language::Spanish);
 		assert_eq!(language_from_tag("pt-PT"), Language::PortugueseBrazil);
 		assert_eq!(language_from_tag("de-DE"), Language::German);
+		assert_eq!(language_from_tag("th-TH"), Language::Thai);
+		assert_eq!(language_from_tag("th_TH"), Language::Thai);
+		assert_eq!(language_from_tag("th"), Language::Thai);
 		for tag in ["ko", "ko-KR", "ko_KR.UTF-8", "KO-kr"] {
 			assert_eq!(language_from_tag(tag), Language::Korean);
 		}
