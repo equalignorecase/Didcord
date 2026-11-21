@@ -2008,8 +2008,13 @@ impl Voice {
 							if let Some(sample) = sample {
 								latency_send.send_modify(|latency| latency.push(sample));
 							} else {
-								latency_send.send_replace(ui::VoiceLatency::default());
+								latency_send.send_modify(|latency| latency.clear_ping());
 							}
+							status_wake.request_repaint();
+							return Ok(());
+						}
+						Status::LateAudioPackets(count) => {
+							latency_send.send_modify(|latency| latency.late_packets = count);
 							status_wake.request_repaint();
 							return Ok(());
 						}

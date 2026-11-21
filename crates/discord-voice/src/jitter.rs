@@ -11,9 +11,9 @@ impl Jitter {
 	pub fn clear(&mut self) {
 		*self = Self::default();
 	}
-	pub fn push(&mut self, sequence: u16, opus: Vec<u8>) {
+	pub fn push(&mut self, sequence: u16, opus: Vec<u8>) -> bool {
 		if opus.len() > 1275 {
-			return;
+			return false;
 		}
 		if self.next.is_none() {
 			self.next = Some(sequence);
@@ -21,7 +21,7 @@ impl Jitter {
 		}
 		let distance = sequence.wrapping_sub(self.next.unwrap());
 		if distance >= 32768 {
-			return;
+			return true;
 		}
 		if distance >= SLOTS as u16 {
 			self.packets.clear();
@@ -32,6 +32,7 @@ impl Jitter {
 		if self.packets.len() < SLOTS && !self.packets.iter().any(|(id, _)| *id == sequence) {
 			self.packets.push((sequence, opus));
 		}
+		false
 	}
 	/// An empty packet requests Opus packet-loss concealment, at most three consecutive packets.
 	pub fn pop(&mut self) -> Option<Vec<u8>> {
@@ -72,6 +73,17 @@ impl Jitter {
 #[cfg(test)]
 mod tests {
 	use super::*;
+	#[test]
+	fn late_packet_is_reported_after_playout_advances() {
+		let mut jitter = Jitter::default();
+		assert!(!jitter.push(10, vec![1]));
+		for _ in 0..3 {
+			jitter.pop();
+		}
+		assert!(jitter.push(10, vec![1]));
+		assert!(!jitter.push(11, vec![1]));
+	}
+
 	#[test]
 	fn burst_loss_preserves_buffered_recovery_and_resets_on_far_jump() {
 		for first in [0u16, u16::MAX - 2] {

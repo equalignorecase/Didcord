@@ -596,7 +596,8 @@ impl Screen {
 					Status::RemoteAudio
 					| Status::Speaking(_)
 					| Status::CameraAvailable(_)
-					| Status::Latency(_) => {
+					| Status::Latency(_)
+					| Status::LateAudioPackets(_) => {
 						return Ok(());
 					}
 				};
