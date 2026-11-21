@@ -9,9 +9,14 @@ const SAMPLES: usize = 24;
 pub struct VoiceLatency {
 	millis: [u16; SAMPLES],
 	len: usize,
+	pub late_packets: u64,
 }
 
 impl VoiceLatency {
+	pub fn clear_ping(&mut self) {
+		self.len = 0;
+	}
+
 	pub fn push(&mut self, sample: Duration) {
 		if self.len == SAMPLES {
 			self.millis.copy_within(1.., 0);
@@ -48,6 +53,12 @@ impl VoiceLatency {
 				&[("value", &last)],
 			));
 			ui.label(i18n::translate("voice-connection-ping-description"));
+			ui.separator();
+			ui.label(i18n::translate_args(
+				"voice-connection-late-audio",
+				&[("count", &self.late_packets.to_string())],
+			));
+			ui.label(i18n::translate("voice-connection-late-audio-description"));
 		});
 	}
 }

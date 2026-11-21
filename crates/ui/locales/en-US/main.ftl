@@ -4322,6 +4322,8 @@ voice-connection-ping-pending = Waiting for the first ping…
 voice-connection-average-ping = Average ping: { $value }
 voice-connection-last-ping = Last ping: { $value }
 voice-connection-ping-description = Round-trip time to the voice signaling server.
+voice-connection-late-audio = Late or duplicate audio packets: { $count }
+voice-connection-late-audio-description = Packets arriving after playback has moved on. Resets when you start a new call.
 # Context: voice_card_section
 voice-voice-card-section-microphone-unavailable-a-still-connected-choose-another-input-in-audio = Microphone unavailable · still connected. Choose another input in Audio settings.
 # Context: voice_channel_button

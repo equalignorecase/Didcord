@@ -15,6 +15,7 @@ struct Speaker {
 #[derive(Default)]
 pub(crate) struct Mixer {
 	speakers: Vec<Speaker>,
+	late_packets: u64,
 }
 impl Mixer {
 	pub fn announce(&mut self, user: u64, ssrc: u32) -> Result<(), &'static str> {
@@ -59,9 +60,14 @@ impl Mixer {
 			.map(|s| s.user)
 	}
 	pub fn push(&mut self, ssrc: u32, sequence: u16, opus: Vec<u8>) {
-		if let Some(speaker) = self.speakers.iter_mut().find(|s| s.ssrc == ssrc) {
-			speaker.jitter.push(sequence, opus);
+		if let Some(speaker) = self.speakers.iter_mut().find(|s| s.ssrc == ssrc)
+			&& speaker.jitter.push(sequence, opus)
+		{
+			self.late_packets = self.late_packets.saturating_add(1);
 		}
+	}
+	pub fn late_packets(&self) -> u64 {
+		self.late_packets
 	}
 	pub fn clear(&mut self) {
 		for speaker in &mut self.speakers {

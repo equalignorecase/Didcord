@@ -535,6 +535,7 @@ async fn run_inner(
 	let mut local_activity = 0;
 	let mut last_speakers = [0; 64];
 	let mut speakers_at = Instant::now();
+	let mut last_late_packets = 0;
 	loop {
 		if let Some(reason) = reconnect.take() {
 			if encryption.is_none() || resume_attempts >= 2 {
@@ -753,6 +754,11 @@ async fn run_inner(
 					   metrics.stream_audio([0,0,0,0,0,0,0,0,bridge_drops,bridge_underruns]);
 					   metrics.poll(false, drops, stalled, 0);
 					   if now >= speakers_at {
+						   let late_packets = mixer.late_packets();
+						   if late_packets != last_late_packets {
+							   emit(Status::LateAudioPackets(late_packets)).map_err(|_| "Call interface closed")?;
+							   last_late_packets = late_packets;
+						   }
 						   let mut users=[0;64];
 						   users[0]=if local_activity>0 {credentials.user.0} else {0};
 						   for (slot,user) in users[1..].iter_mut().zip(mixer.speaking()) {*slot=user;}
@@ -3270,7 +3276,7 @@ mod tests {
 							if let Some(sender) = waiting_tx.take() { sender.send(()).unwrap(); }
 						}
 						Status::Connecting | Status::Discovering | Status::Securing
-						| Status::TransportReady | Status::Speaking(_) | Status::CameraAvailable(_) => {}
+						| Status::TransportReady | Status::Speaking(_) | Status::CameraAvailable(_) | Status::LateAudioPackets(_) => {}
 						Status::Latency(_) => unreachable!("latency uses its own queue"),
 					},
 					result = &mut captured_rx, if !captured => {

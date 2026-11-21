@@ -4273,6 +4273,8 @@ voice-connection-ping-pending = 첫 번째 핑을 기다리는 중…
 voice-connection-average-ping = 평균 핑: { $value }
 voice-connection-last-ping = 최근 핑: { $value }
 voice-connection-ping-description = 음성 신호 서버까지의 왕복 시간입니다.
+voice-connection-late-audio = 늦거나 중복된 오디오 패킷: { $count }
+voice-connection-late-audio-description = 재생이 지난 후 도착한 패킷입니다. 새 통화를 시작하면 초기화됩니다.
 # Context: voice_card_section
 voice-voice-card-section-microphone-unavailable-a-still-connected-choose-another-input-in-audio = 마이크를 사용할 수 없습니다 · 연결은 유지됩니다. 오디오 설정에서 다른 입력을 선택하세요.
 # Context: voice_channel_button
