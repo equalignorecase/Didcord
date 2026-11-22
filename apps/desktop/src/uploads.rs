@@ -612,6 +612,7 @@ impl Uploads {
 		&mut self,
 		generation: u64,
 		channel: Id,
+		upload_limit: u64,
 		source: Vec<Source>,
 		runtime: &tokio::runtime::Handle,
 		context: &egui::Context,
@@ -621,6 +622,38 @@ impl Uploads {
 		}
 		if self.selected.len() + self.loading() + source.len() > discord_api::upload::MAX_FILES {
 			return Err("Attach up to 10 files per message");
+		}
+		let target = crate::upload_compress::effective_target(upload_limit);
+		if source.iter().any(|item| item.size() > target) {
+			let cancelled = Arc::new(AtomicBool::new(false));
+			let flag = cancelled.clone();
+			let files = Arc::new(AtomicUsize::new(source.len()));
+			let (send, result) = mpsc::sync_channel(1);
+			let context = context.clone();
+			runtime.spawn(async move {
+				let mut selected = Vec::with_capacity(source.len());
+				for item in source {
+					if flag.load(Ordering::Acquire) {
+						let _ = send.send(Ok(None));
+						context.request_repaint();
+						return;
+					}
+					let item =
+						crate::upload_compress::compress_if_needed(item, target, &flag).await;
+					let thumbnail = preview(&item).await;
+					selected.push((item, thumbnail));
+				}
+				let _ = send.send(Ok(Some(selected)));
+				context.request_repaint();
+			});
+			self.scope = Some((generation, channel));
+			self.clear_finished_progress();
+			self.choosing.push(Choosing {
+				result,
+				cancelled,
+				files,
+			});
+			return Ok(());
 		}
 		self.admit(&source)?;
 		self.scope = Some((generation, channel));
@@ -648,6 +681,7 @@ impl Uploads {
 		&mut self,
 		generation: u64,
 		channel: Id,
+		upload_limit: u64,
 		runtime: &tokio::runtime::Handle,
 		context: &egui::Context,
 		parent: Arc<winit::window::Window>,
@@ -663,13 +697,21 @@ impl Uploads {
 		}
 		// Construct on the native UI thread; await and inspect outside rendering.
 		let dialog = platform::save::attachment_source(parent);
-		self.start_selection(generation, channel, runtime, context, 0, dialog);
+		self.start_selection(
+			(generation, channel),
+			upload_limit,
+			runtime,
+			context,
+			0,
+			dialog,
+		);
 		Ok(())
 	}
 	pub fn start_drop(
 		&mut self,
 		generation: u64,
 		channel: Id,
+		upload_limit: u64,
 		runtime: &tokio::runtime::Handle,
 		context: &egui::Context,
 		files: Vec<egui::DroppedFileHandle>,
@@ -691,26 +733,33 @@ impl Uploads {
 			paths.push(path.to_owned());
 		}
 		let count = paths.len();
-		self.start_selection(generation, channel, runtime, context, count, async move {
-			Some(paths)
-		});
+		self.start_selection(
+			(generation, channel),
+			upload_limit,
+			runtime,
+			context,
+			count,
+			async move { Some(paths) },
+		);
 		Ok(())
 	}
 	fn start_selection(
 		&mut self,
-		generation: u64,
-		channel: Id,
+		scope: (u64, Id),
+		upload_limit: u64,
 		runtime: &tokio::runtime::Handle,
 		context: &egui::Context,
 		known: usize,
 		selection: impl std::future::Future<Output = Option<Vec<std::path::PathBuf>>> + Send + 'static,
 	) {
+		let (generation, channel) = scope;
 		let cancelled = Arc::new(AtomicBool::new(false));
 		let flag = cancelled.clone();
 		let files = Arc::new(AtomicUsize::new(known));
 		let count = files.clone();
 		let (send, result) = mpsc::sync_channel(1);
 		let context = context.clone();
+		let target = crate::upload_compress::effective_target(upload_limit);
 		runtime.spawn(async move {
 			let result = async {
 				let path = selection.await;
@@ -729,6 +778,8 @@ impl Uploads {
 				let mut total = 0;
 				for path in paths {
 					let source = Source::inspect(path).await?;
+					let source =
+						crate::upload_compress::compress_if_needed(source, target, &flag).await;
 					total += source.size();
 					if total > discord_api::upload::MAX_TOTAL_BYTES {
 						return Err(
@@ -1696,7 +1747,7 @@ mod tests {
 		] {
 			assert!(
 				uploads
-					.start_drop(1, Id(2), &runtime, &context, files)
+					.start_drop(1, Id(2), 20 * 1024 * 1024, &runtime, &context, files)
 					.is_err()
 			);
 			assert!(!uploads.busy());
@@ -1714,14 +1765,28 @@ mod tests {
 		drop(file);
 		assert!(
 			uploads
-				.start_drop(1, Id(2), &runtime, &context, vec![handle(path.clone())])
+				.start_drop(
+					1,
+					Id(2),
+					20 * 1024 * 1024,
+					&runtime,
+					&context,
+					vec![handle(path.clone())]
+				)
 				.is_ok()
 		);
 		// A drop while the first one still loads joins the composer instead of being refused;
 		// sending waits for both, and loading files count toward the 10-file bound.
 		assert!(
 			uploads
-				.start_drop(1, Id(2), &runtime, &context, vec![handle(path.clone())])
+				.start_drop(
+					1,
+					Id(2),
+					20 * 1024 * 1024,
+					&runtime,
+					&context,
+					vec![handle(path.clone())]
+				)
 				.is_ok()
 		);
 		assert!(uploads.accepting());
@@ -1731,6 +1796,7 @@ mod tests {
 				.start_drop(
 					1,
 					Id(2),
+					20 * 1024 * 1024,
 					&runtime,
 					&context,
 					(0..10 - uploads.loading() - uploads.files().len() + 1)
@@ -1749,7 +1815,14 @@ mod tests {
 		uploads.remove_at(1);
 		assert!(
 			uploads
-				.start_drop(1, Id(2), &runtime, &context, vec![handle(path.clone())])
+				.start_drop(
+					1,
+					Id(2),
+					20 * 1024 * 1024,
+					&runtime,
+					&context,
+					vec![handle(path.clone())]
+				)
 				.is_ok()
 		);
 		settle(&mut uploads, &context, Id(2)).await;
@@ -1761,7 +1834,14 @@ mod tests {
 		uploads.remove();
 		assert!(
 			uploads
-				.start_drop(1, Id(2), &runtime, &context, vec![handle(path.clone())])
+				.start_drop(
+					1,
+					Id(2),
+					20 * 1024 * 1024,
+					&runtime,
+					&context,
+					vec![handle(path.clone())]
+				)
 				.is_ok()
 		);
 		// A result inspected before or after navigation must never enter the new conversation.
@@ -1878,6 +1958,7 @@ pub(crate) fn debug_reservation_check(runtime: &tokio::runtime::Handle) {
 			.select_pasted(
 				1,
 				Id(2),
+				20 * 1024 * 1024,
 				vec![Source::pasted_text("synthetic".into()).unwrap()],
 				runtime,
 				&context
@@ -1893,6 +1974,7 @@ pub(crate) fn debug_reservation_check(runtime: &tokio::runtime::Handle) {
 			.select_pasted(
 				1,
 				Id(2),
+				20 * 1024 * 1024,
 				vec![Source::pasted_text("synthetic".into()).unwrap()],
 				runtime,
 				&context

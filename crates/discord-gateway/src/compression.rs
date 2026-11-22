@@ -24,49 +24,69 @@ impl Decoder {
 			}
 			return Ok(Some(frame));
 		};
+		let direct = self.pending.is_empty() && bytes.ends_with(&[0, 0, 255, 255]);
 		if bytes.len() > MAX_GATEWAY_WIRE.saturating_sub(self.pending.len()) {
 			return Err(Failure::CapacityAt(
 				"Compressed Gateway payload exceeds 64 MiB; connection stopped",
 			));
 		}
-		self.pending.extend_from_slice(&bytes);
-		if !self.pending.ends_with(&[0, 0, 255, 255]) {
-			return Ok(None);
-		}
-		let mut output = Vec::new();
+		let compressed: &[u8] = if direct {
+			&bytes
+		} else {
+			self.pending.extend_from_slice(&bytes);
+			if !self.pending.ends_with(&[0, 0, 255, 255]) {
+				return Ok(None);
+			}
+			&self.pending
+		};
+		let mut output =
+			Vec::with_capacity(compressed.len().saturating_mul(3).clamp(4096, 256 * 1024));
 		let mut consumed = 0;
 		loop {
-			let mut chunk = [0; 16 * 1024];
+			if output.len() == output.capacity() {
+				if output.len() > MAX_GATEWAY_WIRE {
+					return Err(Failure::CapacityAt(
+						"Decompressed Gateway payload exceeds 64 MiB; connection stopped",
+					));
+				}
+				let step = output
+					.len()
+					.clamp(16 * 1024, 1024 * 1024)
+					.min(MAX_GATEWAY_WIRE + 1 - output.len());
+				output.reserve(step);
+			}
+			let avail = output.capacity() - output.len();
 			let before_in = self.inflater.total_in();
 			let before_out = self.inflater.total_out();
 			let status = self
 				.inflater
-				.decompress(&self.pending[consumed..], &mut chunk, FlushDecompress::Sync)
+				.decompress_vec(&compressed[consumed..], &mut output, FlushDecompress::Sync)
 				.map_err(|_| Failure::Protocol)?;
 			let read = (self.inflater.total_in() - before_in) as usize;
 			let written = (self.inflater.total_out() - before_out) as usize;
 			if status == Status::StreamEnd {
 				return Err(Failure::Protocol);
 			}
-			if written > MAX_GATEWAY_WIRE.saturating_sub(output.len()) {
+			if output.len() > MAX_GATEWAY_WIRE {
 				return Err(Failure::CapacityAt(
 					"Decompressed Gateway payload exceeds 64 MiB; connection stopped",
 				));
 			}
-			output.extend_from_slice(&chunk[..written]);
 			consumed += read;
-			if consumed == self.pending.len() && written < chunk.len() {
+			if consumed == compressed.len() && written < avail {
 				break;
 			}
 			if read == 0 && written == 0 {
 				return Err(Failure::Protocol);
 			}
 		}
-		self.pending.clear();
-		// Keep ordinary packet reuse without retaining a large READY allocation for
-		// the connection's lifetime. The streaming inflater dictionary stays intact.
-		if self.pending.capacity() > RETAINED_PENDING_BYTES {
-			self.pending = Vec::new();
+		if !direct {
+			self.pending.clear();
+			// Keep ordinary packet reuse without retaining a large READY allocation for
+			// the connection's lifetime. The streaming inflater dictionary stays intact.
+			if self.pending.capacity() > RETAINED_PENDING_BYTES {
+				self.pending = Vec::new();
+			}
 		}
 		let text = String::from_utf8(output).map_err(|_| Failure::Protocol)?;
 		Ok(Some(Frame::Text(text.into())))
@@ -126,7 +146,21 @@ mod tests {
 	fn split_payloads_share_the_dictionary_and_enforce_both_byte_limits() {
 		let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::fast());
 		let mut decoder = Decoder::default();
-		let mut offset = 0;
+		let direct = r#"{"op":1,"d":42}"#;
+		encoder.write_all(direct.as_bytes()).unwrap();
+		encoder.flush().unwrap();
+		assert_eq!(
+			decoder
+				.frame(Frame::Binary(encoder.get_ref().clone().into()))
+				.unwrap(),
+			Some(Frame::Text(direct.into()))
+		);
+		assert_eq!(
+			decoder.pending.capacity(),
+			0,
+			"complete single frame skips pending buffer allocation"
+		);
+		let mut offset = encoder.get_ref().len();
 		for text in [
 			r#"{"op":10,"d":{"heartbeat_interval":1000}}"#,
 			r#"{"op":11,"d":null}"#,

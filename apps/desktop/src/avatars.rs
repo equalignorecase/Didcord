@@ -1791,9 +1791,9 @@ fn decode(bytes: &[u8], budget: &Budget) -> Option<egui::ColorImage> {
 			egui::Color32::TRANSPARENT,
 		);
 		decoder.read_image(image.as_raw_mut()).ok()?;
-		for chunk in image.as_raw_mut().chunks_mut(64 * 1024) {
-			let converted = egui::ColorImage::from_rgba_unmultiplied([chunk.len() / 4, 1], chunk);
-			chunk.copy_from_slice(converted.as_raw());
+		for pixel in image.as_raw_mut().as_chunks_mut::<4>().0 {
+			*pixel = egui::Color32::from_rgba_unmultiplied(pixel[0], pixel[1], pixel[2], pixel[3])
+				.to_array();
 		}
 		return Some(image);
 	}

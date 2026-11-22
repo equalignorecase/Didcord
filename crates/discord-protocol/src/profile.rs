@@ -313,14 +313,18 @@ fn text(value: String, chars: usize, limited: &mut bool) -> String {
 		.char_indices()
 		.nth(chars)
 		.map_or(value.len(), |(index, _)| index);
-	*limited |= end < value.len();
-	value[..end].to_owned()
+	if end < value.len() {
+		*limited = true;
+		value[..end].to_owned()
+	} else {
+		value
+	}
 }
 fn hash(value: Option<String>) -> Option<String> {
 	value.filter(|s| model::valid_avatar_hash(s))
 }
 fn timestamp(value: Option<String>) -> Option<String> {
-	value.filter(|s| s.len() <= 64 && crate::Timestamp::try_from(s.clone()).is_ok())
+	value.filter(|s| s.len() <= 64 && crate::Timestamp::parse(s).is_ok())
 }
 pub fn decode_profile(
 	bytes: &[u8],

@@ -48,6 +48,14 @@ impl State {
 				Some(c.id) == self.selected && c.supports_text() && self.can_read_history(c.id)
 			})
 	}
+	pub fn can_search_local(&self) -> bool {
+		self.auth == AuthState::Authenticated
+			&& self.user.is_some()
+			&& self
+				.channels
+				.iter()
+				.any(|c| Some(c.id) == self.selected && c.supports_text())
+	}
 	pub fn request_search(&mut self, query: String, before: Option<Id>) -> Option<Command> {
 		if !self.can_search() || !model::valid_search_query(&query) {
 			return None;
@@ -64,6 +72,7 @@ impl State {
 			return None;
 		}
 		self.search_request = self.search_request.wrapping_add(1);
+		self.search_local = None;
 		self.archives = None;
 		self.search = Some(SearchView {
 			pins: false,
@@ -90,9 +99,51 @@ impl State {
 			request: self.search_request,
 		})
 	}
+	/// Searches the local SQLite FTS5 index (or bounded regex matcher) for cached messages.
+	pub fn request_local_search(&mut self, query: String, regex: bool) -> Option<Command> {
+		let trimmed = query.trim();
+		if !self.can_search_local() || trimmed.is_empty() || trimmed.len() > 256 {
+			return None;
+		}
+		let channel = self.channel(self.selected?)?;
+		let (channel, guild) = (channel.id, channel.guild);
+		self.search_request = self.search_request.wrapping_add(1);
+		self.search_local = Some(regex);
+		self.archives = None;
+		let query = trimmed.to_owned();
+		self.search = Some(SearchView {
+			pins: false,
+			channel,
+			guild,
+			query: query.clone(),
+			before: None,
+			oldest: self.search_oldest,
+			offset: 0,
+			total: None,
+			pin_before: None,
+			request: self.search_request,
+			loading: true,
+			error: None,
+			page: None,
+		});
+		Some(Command::LocalSearch {
+			channel,
+			guild,
+			query,
+			regex,
+			offset: 0,
+			oldest: self.search_oldest,
+			request: self.search_request,
+		})
+	}
 	/// Select a zero-based page within the original query and cursor scope.
 	pub fn request_search_page(&mut self, page: u32) -> Option<Command> {
-		if !self.can_search() {
+		let allowed = if self.search_local.is_some() {
+			self.can_search_local()
+		} else {
+			self.can_search()
+		};
+		if !allowed {
 			return None;
 		}
 		let view = self.search.as_ref()?;
@@ -105,6 +156,7 @@ impl State {
 		}
 		let guild = view.guild;
 		self.search_request = self.search_request.wrapping_add(1);
+		self.search_local = None;
 		self.archives = None;
 		let view = self.search.as_mut()?;
 		view.offset = offset;
@@ -112,15 +164,27 @@ impl State {
 		view.loading = true;
 		view.error = None;
 		view.page = None;
-		Some(Command::Search {
-			channel: view.channel,
-			guild,
-			query: view.query.clone(),
-			before: view.before,
-			offset,
-			oldest: view.oldest,
-			request: view.request,
-		})
+		if let Some(regex) = self.search_local {
+			Some(Command::LocalSearch {
+				channel: view.channel,
+				guild,
+				query: view.query.clone(),
+				regex,
+				offset,
+				oldest: view.oldest,
+				request: view.request,
+			})
+		} else {
+			Some(Command::Search {
+				channel: view.channel,
+				guild,
+				query: view.query.clone(),
+				before: view.before,
+				offset,
+				oldest: view.oldest,
+				request: view.request,
+			})
+		}
 	}
 	pub fn request_pins(&mut self) -> Option<Command> {
 		self.request_pins_page(None)
@@ -143,6 +207,7 @@ impl State {
 		}
 		let channel = self.selected?;
 		self.search_request = self.search_request.wrapping_add(1);
+		self.search_local = None;
 		self.archives = None;
 		self.search = Some(SearchView {
 			pins: true,
@@ -167,6 +232,7 @@ impl State {
 	}
 	pub fn clear_search(&mut self) -> Command {
 		self.search_request = self.search_request.wrapping_add(1);
+		self.search_local = None;
 		self.search = None;
 		self.archives = None;
 		Command::CancelSearch
@@ -179,7 +245,12 @@ impl State {
 			self.fail(*f);
 			return;
 		}
-		if !self.can_search()
+		let allowed = if self.search_local.is_some() {
+			self.can_search_local()
+		} else {
+			self.can_search()
+		};
+		if !allowed
 			|| !self
 				.search
 				.as_ref()
@@ -236,7 +307,12 @@ impl State {
 			})
 	}
 	pub fn open_search_hit(&mut self, message: Id) -> Option<Command> {
-		if !self.can_search() {
+		let allowed = if self.search_local.is_some() {
+			self.can_search_local()
+		} else {
+			self.can_search()
+		};
+		if !allowed {
 			return None;
 		}
 		let view = self.search.as_ref()?;

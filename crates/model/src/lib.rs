@@ -82,9 +82,27 @@ impl FromStr for Id {
 			.ok_or("Invalid Discord ID")
 	}
 }
+impl Id {
+	/// Formats this ID as ASCII decimal digits into a stack buffer with no heap allocation.
+	pub fn format_into(self, buf: &mut [u8; 20]) -> &str {
+		let mut value = self.0;
+		if value == 0 {
+			buf[19] = b'0';
+			return "0";
+		}
+		let mut pos = buf.len();
+		while value > 0 {
+			pos -= 1;
+			buf[pos] = b'0' + (value % 10) as u8;
+			value /= 10;
+		}
+		std::str::from_utf8(&buf[pos..]).expect("ASCII digits")
+	}
+}
 impl Serialize for Id {
 	fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-		s.serialize_str(&self.to_string())
+		let mut buf = [0_u8; 20];
+		s.serialize_str(self.format_into(&mut buf))
 	}
 }
 impl<'de> Deserialize<'de> for Id {
@@ -1190,5 +1208,12 @@ mod notification_metadata_tests {
 		assert!(!valid_mention_roles(&vec![Id(1), Id(1)]));
 		assert!(!valid_mention_roles(&(1..=101).map(Id).collect()));
 		assert!(!valid_mention_roles(&Vec::with_capacity(101)));
+	}
+	#[test]
+	fn id_stack_format_matches_display_across_boundaries() {
+		let mut buf = [0_u8; 20];
+		for value in [0_u64, 1, 9, 10, 999_999_999_999, u64::MAX] {
+			assert_eq!(Id(value).format_into(&mut buf), value.to_string());
+		}
 	}
 }

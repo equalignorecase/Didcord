@@ -558,10 +558,9 @@ mod tests {
 		);
 	}
 
-	#[test]
-	fn korean_catalog_formats_every_english_message_without_fallback() {
+	fn assert_catalog_complete(language: Language) {
 		let english = Language::English.source();
-		let korean = Language::Korean.load();
+		let catalog = language.load();
 		let mut args = FluentArgs::new();
 		for variable in english.split('$').skip(1) {
 			let name = variable
@@ -578,12 +577,12 @@ mod tests {
 					.flatten()
 			}) {
 				assert!(
-					Language::lookup_in_bundle(&korean.bundle, key, Some(&args))
+					Language::lookup_in_bundle(&catalog.bundle, key, Some(&args))
 						.is_some_and(|text| !text.trim().is_empty()),
-					"Korean catalog cannot format {key} with count {count}"
+					"{language:?} catalog cannot format {key} with count {count}"
 				);
 			}
-			// Count-driven UI must use the Korean catalog, not valid-but-untranslated
+			// Count-driven UI must use the translated catalog, not valid-but-untranslated
 			// English select expressions. Check behavior rather than pinning copy.
 			for key in [
 				"settings-image-cache-days",
@@ -593,12 +592,22 @@ mod tests {
 				"settings-idle-after-minutes",
 			] {
 				assert_ne!(
-					Language::lookup_in_bundle(&korean.bundle, key, Some(&args)),
+					Language::lookup_in_bundle(&catalog.bundle, key, Some(&args)),
 					Language::English.lookup(key, Some(&args)),
-					"Korean count message remains English: {key}"
+					"{language:?} count message remains English: {key}"
 				);
 			}
 		}
+	}
+
+	#[test]
+	fn korean_catalog_formats_every_english_message_without_fallback() {
+		assert_catalog_complete(Language::Korean);
+	}
+
+	#[test]
+	fn thai_catalog_formats_every_english_message_without_fallback() {
+		assert_catalog_complete(Language::Thai);
 	}
 
 	#[test]

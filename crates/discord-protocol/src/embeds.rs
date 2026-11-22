@@ -51,9 +51,13 @@ fn text(value: String, chars: usize, limited: &mut bool) -> String {
 		.char_indices()
 		.nth(chars)
 		.map_or(value.len(), |(i, _)| i);
-	*limited |= end < value.len();
-	// Copy the bounded slice so a small truncated string cannot retain a large capacity.
-	value[..end].to_owned()
+	if end < value.len() {
+		*limited = true;
+		// Copy the bounded slice so a small truncated string cannot retain a large capacity.
+		value[..end].to_owned()
+	} else {
+		value
+	}
 }
 fn url(value: Option<String>, limited: &mut bool) -> Option<String> {
 	value.filter(|s| {
@@ -107,8 +111,7 @@ impl EmbedDto {
 			color: self.color.filter(|n| *n <= 0xff_ffff),
 			timestamp: self
 				.timestamp
-				.filter(|s| s.len() <= 64)
-				.and_then(|s| crate::Timestamp::try_from(s.clone()).ok().map(|_| s)),
+				.filter(|s| s.len() <= 64 && crate::Timestamp::parse(s).is_ok()),
 			author: self.author.map(|a| author(a, &mut limited)),
 			provider: self.provider.map(|a| author(a, &mut limited)),
 			footer: self.footer.map(|f| EmbedFooter {

@@ -2883,7 +2883,7 @@ impl MessagingUi {
 						// Search pill.
 						let (pill, response) =
 							ui.allocate_exact_size(egui::vec2(144.0, 28.0), egui::Sense::click());
-						let enabled = state.can_search();
+						let enabled = state.can_search() || state.can_search_local();
 						response.widget_info(|| {
 							egui::WidgetInfo::labeled(
 								egui::Role::Button,
@@ -5336,7 +5336,7 @@ impl MessagingUi {
 		if !settings_open
 			&& !self.switcher_frame
 			&& !self.ime_active
-			&& state.can_search()
+			&& (state.can_search() || state.can_search_local())
 			&& ctx.memory(|memory| memory.top_modal_layer().is_none())
 			&& !egui::Popup::is_any_open(&ctx)
 			&& ctx.input(|input| {

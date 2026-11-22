@@ -2466,6 +2466,7 @@ search-overlays-search-for = 검색 대상
 search-pane-close = 닫기
 # Context: pane
 search-pane-hide-matching-text-highlight = 검색어 강조 표시 숨기기
+search-pane-local-cache = 로컬 캐시 검색 (FTS5 / 정규식)
 # Context: pane
 search-pane-indexing-is-incomplete-results-may-be-missing = 색인 작업이 완료되지 않아 일부 결과가 누락될 수 있습니다.
 # Context: pane

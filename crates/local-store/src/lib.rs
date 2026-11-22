@@ -1,6 +1,7 @@
 //! Account-isolated bounded SQLite cache. This is not Discord's authoritative state.
 mod account_presence;
 mod channel_preferences;
+mod regex;
 use model::{Id, Message, ReadingPreferences, User};
 use rusqlite::{Connection, OptionalExtension, params};
 use std::{
@@ -11,25 +12,79 @@ use std::{
 
 const MAX_MEDIA_JSON: usize = 256 * 1024;
 const MAX_WINDOW_BYTES: usize = 4 * 1024 * 1024;
-const NATIVE_SCHEMA: u32 = 29;
-const READABLE_SCHEMA: u32 = 29;
+const NATIVE_SCHEMA: u32 = 30;
+const READABLE_SCHEMA: u32 = 30;
+const MESSAGE_COLUMNS: &str = "id,author,name,content,edited,reply,unsupported,avatar,discriminator,embeds,embeds_suppressed,attachments,mentions,extra_content,message_kind,reply_deleted,webhook,account_kind,forwarded,author_roles,author_nick,components,application_id,original_flags,sticker_items,interaction,reactions,verified_bot";
+const MESSAGE_COLUMNS_M: &str = "m.id,m.author,m.name,m.content,m.edited,m.reply,m.unsupported,m.avatar,m.discriminator,m.embeds,m.embeds_suppressed,m.attachments,m.mentions,m.extra_content,m.message_kind,m.reply_deleted,m.webhook,m.account_kind,m.forwarded,m.author_roles,m.author_nick,m.components,m.application_id,m.original_flags,m.sticker_items,m.interaction,m.reactions,m.verified_bot";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LocalSearchMode {
+	FullText,
+	Regex,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct LocalSearchRequest<'a> {
+	pub channel: Option<Id>,
+	pub query: &'a str,
+	pub mode: LocalSearchMode,
+	pub oldest: bool,
+	pub offset: usize,
+	pub limit: usize,
+}
+
+#[derive(Default)]
+pub struct LocalSearchPage {
+	pub hits: Vec<(Id, Message)>,
+	pub total: u64,
+}
+
+/// Validates and evaluates a bounded local search regex against one candidate string.
+pub fn regex_match(pattern: &str, text: &str) -> Result<bool> {
+	let compiled = regex::Regex::compile(pattern).map_err(|_| StoreError::Incompatible)?;
+	Ok(compiled.is_match(text))
+}
 #[derive(serde::Deserialize)]
 struct CachedMentions(#[serde(deserialize_with = "model::deserialize_mentions")] Vec<User>);
 fn parse_author_roles(raw: &str) -> std::result::Result<Vec<Id>, StoreError> {
-	let values: Vec<String> = serde_json::from_str(raw).map_err(|_| StoreError::Incompatible)?;
-	if values.len() > model::permissions::MAX_MEMBER_ROLES {
-		return Err(StoreError::Capacity);
-	}
-	let mut roles = Vec::with_capacity(values.len());
-	let mut seen = BTreeSet::new();
-	for value in values {
-		let id = value.parse::<Id>().map_err(|_| StoreError::Incompatible)?;
-		if id.0 == 0 || !seen.insert(id) {
-			return Err(StoreError::Incompatible);
+	struct BoundedRoles;
+	impl<'de> serde::de::Visitor<'de> for BoundedRoles {
+		type Value = Vec<Id>;
+		fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+			f.write_str("a bounded list of role IDs")
 		}
-		roles.push(id);
+		fn visit_seq<A: serde::de::SeqAccess<'de>>(
+			self,
+			mut seq: A,
+		) -> std::result::Result<Self::Value, A::Error> {
+			let mut roles = Vec::with_capacity(
+				seq.size_hint()
+					.unwrap_or(0)
+					.min(model::permissions::MAX_MEMBER_ROLES),
+			);
+			let mut seen = BTreeSet::new();
+			while let Some(id) = seq.next_element::<Id>()? {
+				if roles.len() == model::permissions::MAX_MEMBER_ROLES {
+					return Err(serde::de::Error::custom("author role capacity"));
+				}
+				if id.0 == 0 || !seen.insert(id) {
+					return Err(serde::de::Error::custom("invalid author role"));
+				}
+				roles.push(id);
+			}
+			Ok(roles)
+		}
 	}
-	Ok(roles)
+	let mut de = serde_json::Deserializer::from_str(raw);
+	serde::Deserializer::deserialize_seq(&mut de, BoundedRoles)
+		.and_then(|roles| de.end().map(|()| roles))
+		.map_err(|error| {
+			if error.to_string().contains("author role capacity") {
+				StoreError::Capacity
+			} else {
+				StoreError::Incompatible
+			}
+		})
 }
 pub struct LocalStore(Connection);
 /// Device-local controls, bounded independently of account caches.
@@ -328,7 +383,7 @@ impl LocalStore {
 		if version > READABLE_SCHEMA {
 			return Err(StoreError::Incompatible);
 		}
-		connection.execute_batch("PRAGMA page_size=4096; PRAGMA max_page_count=16384; PRAGMA cache_size=-2048; PRAGMA temp_store=MEMORY; PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA wal_autocheckpoint=256; PRAGMA journal_size_limit=8388608; PRAGMA secure_delete=ON; PRAGMA auto_vacuum=INCREMENTAL;
+		connection.execute_batch("PRAGMA page_size=4096; PRAGMA max_page_count=16384; PRAGMA cache_size=-2048; PRAGMA mmap_size=67108864; PRAGMA temp_store=MEMORY; PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA wal_autocheckpoint=256; PRAGMA journal_size_limit=8388608; PRAGMA secure_delete=ON; PRAGMA auto_vacuum=INCREMENTAL;
             CREATE TABLE IF NOT EXISTS messages(account TEXT NOT NULL,channel TEXT NOT NULL,id TEXT NOT NULL,author TEXT NOT NULL,name TEXT NOT NULL,content TEXT NOT NULL,edited INTEGER NOT NULL,reply TEXT,unsupported INTEGER NOT NULL,PRIMARY KEY(account,channel,id));
             CREATE INDEX IF NOT EXISTS messages_channel_order ON messages(account,channel,length(id),id);
             CREATE TABLE IF NOT EXISTS channels(account TEXT NOT NULL,channel TEXT NOT NULL,touched INTEGER NOT NULL,PRIMARY KEY(account,channel));
@@ -638,6 +693,19 @@ impl LocalStore {
 		if !has_author_nick {
 			transaction.execute_batch("ALTER TABLE messages ADD COLUMN author_nick TEXT;")?;
 		}
+		transaction.execute_batch(
+			"CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+				account UNINDEXED,
+				channel UNINDEXED,
+				id UNINDEXED,
+				author_name,
+				content,
+				tokenize='unicode61'
+			);
+			INSERT INTO messages_fts(account,channel,id,author_name,content)
+				SELECT account,channel,id,name,content FROM messages
+				WHERE NOT EXISTS (SELECT 1 FROM messages_fts LIMIT 1);",
+		)?;
 		transaction.commit()?;
 		Ok(Self(connection))
 	}
@@ -986,23 +1054,35 @@ impl LocalStore {
 		}
 		// Compare on the storage worker; unchanged rows need no serialization or write.
 		let transaction = self.0.transaction()?;
-		let account = account.to_string();
-		let channel = channel.to_string();
+		let mut account_buf = [0_u8; 20];
+		let mut channel_buf = [0_u8; 20];
+		let account = account.format_into(&mut account_buf);
+		let channel = channel.format_into(&mut channel_buf);
 		let retained: std::collections::BTreeSet<_> = messages.iter().map(|m| m.id).collect();
 		let previous: BTreeMap<_, _> = existing.iter().map(|m| (m.id, m)).collect();
 		let mut deleted = false;
 		{
 			let mut delete = transaction
 				.prepare_cached("DELETE FROM messages WHERE account=?1 AND channel=?2 AND id=?3")?;
+			let mut delete_fts = transaction.prepare_cached(
+				"DELETE FROM messages_fts WHERE account=?1 AND channel=?2 AND id=?3",
+			)?;
 			for message in existing {
 				if !retained.contains(&message.id) {
-					deleted |=
-						delete.execute(params![account, channel, message.id.to_string()])? > 0;
+					let mut id_buf = [0_u8; 20];
+					let id = message.id.format_into(&mut id_buf);
+					deleted |= delete.execute(params![account, channel, id])? > 0;
+					delete_fts.execute(params![account, channel, id])?;
 				}
 			}
 		}
 		let mut insert = transaction.prepare_cached(
             "INSERT OR REPLACE INTO messages(account,channel,id,author,name,content,edited,reply,unsupported,avatar,discriminator,embeds,embeds_suppressed,attachments,mentions,extra_content,message_kind,reply_deleted,webhook,account_kind,forwarded,author_roles,author_nick,components,application_id,original_flags,sticker_items,interaction,reactions,verified_bot) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,?26,?27,?28,?29,?30)")?;
+		let mut delete_fts = transaction
+			.prepare_cached("DELETE FROM messages_fts WHERE account=?1 AND channel=?2 AND id=?3")?;
+		let mut insert_fts = transaction.prepare_cached(
+			"INSERT INTO messages_fts(account,channel,id,author_name,content) VALUES(?1,?2,?3,?4,?5)",
+		)?;
 		for message in messages {
 			if previous
 				.get(&message.id)
@@ -1026,14 +1106,8 @@ impl LocalStore {
 					return Err(StoreError::Capacity);
 				}
 			}
-			let author_roles = serde_json::to_string(
-				&message
-					.author_roles
-					.iter()
-					.map(|role| role.to_string())
-					.collect::<Vec<_>>(),
-			)
-			.map_err(|_| StoreError::Incompatible)?;
+			let author_roles = serde_json::to_string(&message.author_roles)
+				.map_err(|_| StoreError::Incompatible)?;
 			if author_roles.len() > 16 * 1024 {
 				return Err(StoreError::Capacity);
 			}
@@ -1085,15 +1159,20 @@ impl LocalStore {
 			} else {
 				message.author.kind
 			};
+			let mut id_buf = [0_u8; 20];
+			let mut author_buf = [0_u8; 20];
+			let mut reply_buf = [0_u8; 20];
+			let mut app_buf = [0_u8; 20];
+			let mut flags_buf = [0_u8; 20];
 			insert.execute(params![
 				account,
 				channel,
-				message.id.to_string(),
-				message.author.id.to_string(),
+				message.id.format_into(&mut id_buf),
+				message.author.id.format_into(&mut author_buf),
 				message.author.name,
 				message.content,
 				message.edited,
-				message.reply_to.map(|id| id.to_string()),
+				message.reply_to.map(|id| id.format_into(&mut reply_buf)),
 				message.unsupported,
 				message.author.avatar,
 				message.author.discriminator,
@@ -1110,15 +1189,29 @@ impl LocalStore {
 				author_roles,
 				message.author_nick.as_deref(),
 				components,
-				message.application_id.map(|id| id.to_string()),
-				message.flags.to_string(),
+				message
+					.application_id
+					.map(|id| id.format_into(&mut app_buf)),
+				Id(message.flags).format_into(&mut flags_buf),
 				sticker_items,
 				interaction,
 				reactions,
 				verified_bot,
 			])?;
+			let mut fts_id_buf = [0_u8; 20];
+			let fts_id = message.id.format_into(&mut fts_id_buf);
+			delete_fts.execute(params![account, channel, fts_id])?;
+			insert_fts.execute(params![
+				account,
+				channel,
+				fts_id,
+				message.author.name,
+				message.content,
+			])?;
 		}
 		drop(insert);
+		drop(delete_fts);
+		drop(insert_fts);
 		transaction.execute("INSERT INTO channels VALUES(?1,?2,unixepoch('subsec')*1000) ON CONFLICT(account,channel) DO UPDATE SET touched=excluded.touched",params![account,channel])?;
 		// The start holds only while the window still begins at the same first message.
 		match messages
@@ -1127,10 +1220,13 @@ impl LocalStore {
 			.min()
 			.filter(|_| start)
 		{
-			Some(first) => transaction.execute(
-				"INSERT OR REPLACE INTO history_starts VALUES(?1,?2,?3)",
-				params![account, channel, first.to_string()],
-			)?,
+			Some(first) => {
+				let mut first_buf = [0_u8; 20];
+				transaction.execute(
+					"INSERT OR REPLACE INTO history_starts VALUES(?1,?2,?3)",
+					params![account, channel, first.format_into(&mut first_buf)],
+				)?
+			}
 			None => transaction.execute(
 				"DELETE FROM history_starts WHERE account=?1 AND channel=?2",
 				params![account, channel],
@@ -1164,6 +1260,10 @@ impl LocalStore {
 				params![a, c],
 			)?;
 			transaction.execute(
+				"DELETE FROM messages_fts WHERE account=?1 AND channel=?2",
+				params![a, c],
+			)?;
+			transaction.execute(
 				"DELETE FROM channels WHERE account=?1 AND channel=?2",
 				params![a, c],
 			)?;
@@ -1184,238 +1284,37 @@ impl LocalStore {
 		let Some(first) = messages.iter().map(|message| message.id).min() else {
 			return Ok(false);
 		};
+		let mut account_buf = [0_u8; 20];
+		let mut channel_buf = [0_u8; 20];
+		let mut first_buf = [0_u8; 20];
 		let saved: Option<String> = self
 			.0
 			.query_row(
 				"SELECT first FROM history_starts WHERE account=?1 AND channel=?2",
-				params![account.to_string(), channel.to_string()],
+				params![
+					account.format_into(&mut account_buf),
+					channel.format_into(&mut channel_buf)
+				],
 				|row| row.get(0),
 			)
 			.optional()?;
-		Ok(saved.is_some_and(|saved| saved == first.to_string()))
+		Ok(saved.is_some_and(|saved| saved == first.format_into(&mut first_buf)))
 	}
 	pub fn load_channel(&self, account: Id, channel: Id) -> Result<Vec<Message>> {
-		let mut query = self.0.prepare_cached("SELECT id,author,name,content,edited,reply,unsupported,avatar,discriminator,embeds,embeds_suppressed,attachments,mentions,extra_content,message_kind,reply_deleted,webhook,account_kind,forwarded,author_roles,author_nick,components,application_id,original_flags,sticker_items,interaction,reactions,verified_bot FROM messages WHERE account=?1 AND channel=?2 ORDER BY length(id),id LIMIT 500")?;
-		let mut rows = query.query(params![account.to_string(), channel.to_string()])?;
+		let mut account_buf = [0_u8; 20];
+		let mut channel_buf = [0_u8; 20];
+		let sql = format!(
+			"SELECT {MESSAGE_COLUMNS} FROM messages WHERE account=?1 AND channel=?2 ORDER BY length(id),id LIMIT 500"
+		);
+		let mut query = self.0.prepare_cached(&sql)?;
+		let mut rows = query.query(params![
+			account.format_into(&mut account_buf),
+			channel.format_into(&mut channel_buf)
+		])?;
 		let mut messages = Vec::new();
 		let mut bytes = 0;
 		while let Some(row) = rows.next()? {
-			let mut account_kind = match row.get_ref(17)? {
-				rusqlite::types::ValueRef::Integer(0) => model::AccountKind::Human,
-				rusqlite::types::ValueRef::Integer(1) => model::AccountKind::Bot,
-				rusqlite::types::ValueRef::Integer(2) => model::AccountKind::App,
-				_ => return Err(StoreError::Incompatible),
-			};
-			match row.get_ref(27)? {
-				rusqlite::types::ValueRef::Integer(0) => {}
-				rusqlite::types::ValueRef::Integer(1)
-					if account_kind == model::AccountKind::Bot =>
-				{
-					account_kind = model::AccountKind::VerifiedBot;
-				}
-				_ => return Err(StoreError::Incompatible),
-			}
-			let webhook = match row.get_ref(16)? {
-				rusqlite::types::ValueRef::Integer(0) => false,
-				rusqlite::types::ValueRef::Integer(1) => true,
-				_ => return Err(StoreError::Incompatible),
-			};
-			let reply_deleted = match row.get_ref(15)? {
-				rusqlite::types::ValueRef::Integer(0) => false,
-				rusqlite::types::ValueRef::Integer(1) => true,
-				_ => return Err(StoreError::Incompatible),
-			};
-			let extra_content = row
-				.get_ref(13)?
-				.as_i64()
-				.ok()
-				.and_then(|bits| u8::try_from(bits).ok())
-				.and_then(model::ExtraContent::from_bits)
-				.ok_or(StoreError::Incompatible)?;
-			// Inspect borrowed SQLite fields before allocating attacker-controlled cache strings.
-			for (column, maximum) in [
-				(0, 20),
-				(1, 20),
-				(2, 512),
-				(3, 64 * 1024),
-				(9, MAX_MEDIA_JSON),
-				(11, MAX_MEDIA_JSON),
-				(12, 128 * 1024),
-				(19, 16 * 1024),
-				(21, MAX_MEDIA_JSON),
-				(23, 20),
-				(24, 32768),
-			] {
-				if row
-					.get_ref(column)?
-					.as_str()
-					.map_err(|_| StoreError::Incompatible)?
-					.len() > maximum
-				{
-					return Err(StoreError::Capacity);
-				}
-			}
-			for (column, maximum) in [(5, 20), (7, 34), (20, 512), (22, 20), (25, 4096)] {
-				if !matches!(row.get_ref(column)?, rusqlite::types::ValueRef::Null)
-					&& row
-						.get_ref(column)?
-						.as_str()
-						.map_err(|_| StoreError::Incompatible)?
-						.len() > maximum
-				{
-					return Err(StoreError::Capacity);
-				}
-			}
-			let embeds = serde_json::from_str::<CachedEmbeds>(
-				row.get_ref(9)?
-					.as_str()
-					.map_err(|_| StoreError::Incompatible)?,
-			)
-			.map_err(|_| StoreError::Incompatible)?
-			.0;
-			let attachments = serde_json::from_str::<model::AttachmentList>(
-				row.get_ref(11)?
-					.as_str()
-					.map_err(|_| StoreError::Incompatible)?,
-			)
-			.map_err(|_| StoreError::Incompatible)?
-			.0;
-			let mentions = serde_json::from_str::<CachedMentions>(
-				row.get_ref(12)?
-					.as_str()
-					.map_err(|_| StoreError::Incompatible)?,
-			)
-			.map_err(|_| StoreError::Incompatible)?
-			.0;
-			if !model::valid_mentions(&mentions)
-				|| !model::valid_embeds(&embeds)
-				|| !model::valid_attachments(&attachments)
-			{
-				return Err(StoreError::Capacity);
-			}
-			let parse = |value: String| value.parse::<Id>().map_err(|_| StoreError::Incompatible);
-			let author_roles = parse_author_roles(
-				row.get_ref(19)?
-					.as_str()
-					.map_err(|_| StoreError::Incompatible)?,
-			)?;
-			let author_nick = match row.get_ref(20)? {
-				rusqlite::types::ValueRef::Null => None,
-				rusqlite::types::ValueRef::Text(bytes) => {
-					let nick = std::str::from_utf8(bytes).map_err(|_| StoreError::Incompatible)?;
-					if nick.is_empty() {
-						None
-					} else {
-						Some(nick.chars().take(128).collect())
-					}
-				}
-				_ => return Err(StoreError::Incompatible),
-			};
-			let flags_text = row
-				.get_ref(23)?
-				.as_str()
-				.map_err(|_| StoreError::Incompatible)?;
-			if flags_text.is_empty() || !flags_text.bytes().all(|b| b.is_ascii_digit()) {
-				return Err(StoreError::Incompatible);
-			}
-			let flags = flags_text
-				.parse::<u64>()
-				.map_err(|_| StoreError::Incompatible)?;
-			if flags & 64 != 0 {
-				return Err(StoreError::Incompatible);
-			}
-			let interaction = match row.get_ref(25)? {
-				rusqlite::types::ValueRef::Null => None,
-				rusqlite::types::ValueRef::Text(bytes) => {
-					let interaction = serde_json::from_slice::<model::Interaction>(bytes)
-						.map_err(|_| StoreError::Incompatible)?;
-					if interaction.user.name.len() > 512 || interaction.command.len() > 256 {
-						return Err(StoreError::Capacity);
-					}
-					Some(Box::new(interaction))
-				}
-				_ => return Err(StoreError::Incompatible),
-			};
-			let reactions = match row.get_ref(26)? {
-				rusqlite::types::ValueRef::Null => None,
-				rusqlite::types::ValueRef::Text(bytes) => {
-					let text = std::str::from_utf8(bytes).map_err(|_| StoreError::Incompatible)?;
-					if text.len() > 16384 {
-						return Err(StoreError::Capacity);
-					}
-					let reactions = serde_json::from_str::<Vec<model::Reaction>>(text)
-						.map_err(|_| StoreError::Incompatible)?;
-					if !model::valid_reactions(&reactions) {
-						return Err(StoreError::Incompatible);
-					}
-					Some(reactions)
-				}
-				_ => return Err(StoreError::Incompatible),
-			};
-			let message = Message {
-				poll: None,
-				sticker_items: serde_json::from_str::<
-					model::StickerList<{ model::MAX_MESSAGE_STICKERS }>,
-				>(
-					row.get_ref(24)?
-						.as_str()
-						.map_err(|_| StoreError::Incompatible)?,
-				)
-				.map_err(|_| StoreError::Incompatible)?
-				.0,
-				flags,
-				ephemeral: false,
-				application_id: row.get::<_, Option<String>>(22)?.map(parse).transpose()?,
-				components: serde_json::from_str::<model::ComponentList>(
-					row.get_ref(21)?
-						.as_str()
-						.map_err(|_| StoreError::Incompatible)?,
-				)
-				.map_err(|_| StoreError::Incompatible)?
-				.0,
-				reactions,
-				id: parse(row.get(0)?)?,
-				channel,
-				author: User {
-					primary_guild: None,
-					cosmetics: None,
-					id: parse(row.get(1)?)?,
-					name: row.get(2)?,
-					avatar: row.get(7)?,
-					webhook,
-					kind: account_kind,
-					discriminator: row.get(8)?,
-				},
-				content: row.get(3)?,
-				edited: row.get(4)?,
-				edited_at: None,
-				reply_to: row.get::<_, Option<String>>(5)?.map(parse).transpose()?,
-				unsupported: row.get(6)?,
-				extra_content,
-				kind: row.get(14)?,
-				reply_deleted,
-				forwarded: row.get(18)?,
-				interaction,
-				nonce: None,
-				revision: 0,
-				embeds,
-				author_nick,
-				author_roles,
-				mention_roles: vec![],
-				mention_everyone: false,
-				suppress_notifications: false,
-				mentions,
-				embeds_suppressed: row.get(10)?,
-				attachments,
-			};
-			if message.reply_deleted
-				&& (!matches!(message.kind, 19 | 23)
-					|| !message
-						.reply_to
-						.is_some_and(|id| id.0 > 0 && id < message.id))
-			{
-				return Err(StoreError::Incompatible);
-			}
+			let message = Self::decode_message_row(row, channel)?;
 			bytes += message.bytes();
 			if bytes > MAX_WINDOW_BYTES {
 				return Err(StoreError::Capacity);
@@ -1423,6 +1322,395 @@ impl LocalStore {
 			messages.push(message);
 		}
 		Ok(messages)
+	}
+	fn decode_message_row(row: &rusqlite::Row<'_>, channel: Id) -> Result<Message> {
+		let mut account_kind = match row.get_ref(17)? {
+			rusqlite::types::ValueRef::Integer(0) => model::AccountKind::Human,
+			rusqlite::types::ValueRef::Integer(1) => model::AccountKind::Bot,
+			rusqlite::types::ValueRef::Integer(2) => model::AccountKind::App,
+			_ => return Err(StoreError::Incompatible),
+		};
+		match row.get_ref(27)? {
+			rusqlite::types::ValueRef::Integer(0) => {}
+			rusqlite::types::ValueRef::Integer(1) if account_kind == model::AccountKind::Bot => {
+				account_kind = model::AccountKind::VerifiedBot;
+			}
+			_ => return Err(StoreError::Incompatible),
+		}
+		let webhook = match row.get_ref(16)? {
+			rusqlite::types::ValueRef::Integer(0) => false,
+			rusqlite::types::ValueRef::Integer(1) => true,
+			_ => return Err(StoreError::Incompatible),
+		};
+		let reply_deleted = match row.get_ref(15)? {
+			rusqlite::types::ValueRef::Integer(0) => false,
+			rusqlite::types::ValueRef::Integer(1) => true,
+			_ => return Err(StoreError::Incompatible),
+		};
+		let extra_content = row
+			.get_ref(13)?
+			.as_i64()
+			.ok()
+			.and_then(|bits| u8::try_from(bits).ok())
+			.and_then(model::ExtraContent::from_bits)
+			.ok_or(StoreError::Incompatible)?;
+		// Inspect borrowed SQLite fields before allocating attacker-controlled cache strings.
+		for (column, maximum) in [
+			(0, 20),
+			(1, 20),
+			(2, 512),
+			(3, 64 * 1024),
+			(9, MAX_MEDIA_JSON),
+			(11, MAX_MEDIA_JSON),
+			(12, 128 * 1024),
+			(19, 16 * 1024),
+			(21, MAX_MEDIA_JSON),
+			(23, 20),
+			(24, 32768),
+		] {
+			if row
+				.get_ref(column)?
+				.as_str()
+				.map_err(|_| StoreError::Incompatible)?
+				.len() > maximum
+			{
+				return Err(StoreError::Capacity);
+			}
+		}
+		for (column, maximum) in [(5, 20), (7, 34), (20, 512), (22, 20), (25, 4096)] {
+			if !matches!(row.get_ref(column)?, rusqlite::types::ValueRef::Null)
+				&& row
+					.get_ref(column)?
+					.as_str()
+					.map_err(|_| StoreError::Incompatible)?
+					.len() > maximum
+			{
+				return Err(StoreError::Capacity);
+			}
+		}
+		let embeds = serde_json::from_str::<CachedEmbeds>(
+			row.get_ref(9)?
+				.as_str()
+				.map_err(|_| StoreError::Incompatible)?,
+		)
+		.map_err(|_| StoreError::Incompatible)?
+		.0;
+		let attachments = serde_json::from_str::<model::AttachmentList>(
+			row.get_ref(11)?
+				.as_str()
+				.map_err(|_| StoreError::Incompatible)?,
+		)
+		.map_err(|_| StoreError::Incompatible)?
+		.0;
+		let mentions = serde_json::from_str::<CachedMentions>(
+			row.get_ref(12)?
+				.as_str()
+				.map_err(|_| StoreError::Incompatible)?,
+		)
+		.map_err(|_| StoreError::Incompatible)?
+		.0;
+		if !model::valid_mentions(&mentions)
+			|| !model::valid_embeds(&embeds)
+			|| !model::valid_attachments(&attachments)
+		{
+			return Err(StoreError::Capacity);
+		}
+		let parse = |value: String| value.parse::<Id>().map_err(|_| StoreError::Incompatible);
+		let author_roles = parse_author_roles(
+			row.get_ref(19)?
+				.as_str()
+				.map_err(|_| StoreError::Incompatible)?,
+		)?;
+		let author_nick = match row.get_ref(20)? {
+			rusqlite::types::ValueRef::Null => None,
+			rusqlite::types::ValueRef::Text(bytes) => {
+				let nick = std::str::from_utf8(bytes).map_err(|_| StoreError::Incompatible)?;
+				if nick.is_empty() {
+					None
+				} else {
+					Some(nick.chars().take(128).collect())
+				}
+			}
+			_ => return Err(StoreError::Incompatible),
+		};
+		let flags_text = row
+			.get_ref(23)?
+			.as_str()
+			.map_err(|_| StoreError::Incompatible)?;
+		if flags_text.is_empty() || !flags_text.bytes().all(|b| b.is_ascii_digit()) {
+			return Err(StoreError::Incompatible);
+		}
+		let flags = flags_text
+			.parse::<u64>()
+			.map_err(|_| StoreError::Incompatible)?;
+		if flags & 64 != 0 {
+			return Err(StoreError::Incompatible);
+		}
+		let interaction = match row.get_ref(25)? {
+			rusqlite::types::ValueRef::Null => None,
+			rusqlite::types::ValueRef::Text(bytes) => {
+				let interaction = serde_json::from_slice::<model::Interaction>(bytes)
+					.map_err(|_| StoreError::Incompatible)?;
+				if interaction.user.name.len() > 512 || interaction.command.len() > 256 {
+					return Err(StoreError::Capacity);
+				}
+				Some(Box::new(interaction))
+			}
+			_ => return Err(StoreError::Incompatible),
+		};
+		let reactions = match row.get_ref(26)? {
+			rusqlite::types::ValueRef::Null => None,
+			rusqlite::types::ValueRef::Text(bytes) => {
+				let text = std::str::from_utf8(bytes).map_err(|_| StoreError::Incompatible)?;
+				if text.len() > 16384 {
+					return Err(StoreError::Capacity);
+				}
+				let reactions = serde_json::from_str::<Vec<model::Reaction>>(text)
+					.map_err(|_| StoreError::Incompatible)?;
+				if !model::valid_reactions(&reactions) {
+					return Err(StoreError::Incompatible);
+				}
+				Some(reactions)
+			}
+			_ => return Err(StoreError::Incompatible),
+		};
+		let message = Message {
+			poll: None,
+			sticker_items: serde_json::from_str::<
+				model::StickerList<{ model::MAX_MESSAGE_STICKERS }>,
+			>(
+				row.get_ref(24)?
+					.as_str()
+					.map_err(|_| StoreError::Incompatible)?,
+			)
+			.map_err(|_| StoreError::Incompatible)?
+			.0,
+			flags,
+			ephemeral: false,
+			application_id: row.get::<_, Option<String>>(22)?.map(parse).transpose()?,
+			components: serde_json::from_str::<model::ComponentList>(
+				row.get_ref(21)?
+					.as_str()
+					.map_err(|_| StoreError::Incompatible)?,
+			)
+			.map_err(|_| StoreError::Incompatible)?
+			.0,
+			reactions,
+			id: parse(row.get(0)?)?,
+			channel,
+			author: User {
+				primary_guild: None,
+				cosmetics: None,
+				id: parse(row.get(1)?)?,
+				name: row.get(2)?,
+				avatar: row.get(7)?,
+				webhook,
+				kind: account_kind,
+				discriminator: row.get(8)?,
+			},
+			content: row.get(3)?,
+			edited: row.get(4)?,
+			edited_at: None,
+			reply_to: row.get::<_, Option<String>>(5)?.map(parse).transpose()?,
+			unsupported: row.get(6)?,
+			extra_content,
+			kind: row.get(14)?,
+			reply_deleted,
+			forwarded: row.get(18)?,
+			interaction,
+			nonce: None,
+			revision: 0,
+			embeds,
+			author_nick,
+			author_roles,
+			mention_roles: vec![],
+			mention_everyone: false,
+			suppress_notifications: false,
+			mentions,
+			embeds_suppressed: row.get(10)?,
+			attachments,
+		};
+		if message.reply_deleted
+			&& (!matches!(message.kind, 19 | 23)
+				|| !message
+					.reply_to
+					.is_some_and(|id| id.0 > 0 && id < message.id))
+		{
+			return Err(StoreError::Incompatible);
+		}
+		Ok(message)
+	}
+	/// Searches locally cached messages for `account` using SQLite FTS5 or bounded PikeVM regex.
+	pub fn search_messages(
+		&self,
+		account: Id,
+		request: LocalSearchRequest<'_>,
+	) -> Result<LocalSearchPage> {
+		let LocalSearchRequest {
+			channel,
+			query,
+			mode,
+			oldest,
+			offset,
+			limit,
+		} = request;
+		let query = query.trim();
+		let limit = limit.clamp(1, model::SEARCH_PAGE_SIZE);
+		if account.0 == 0 || query.is_empty() || query.len() > 256 {
+			return Ok(LocalSearchPage::default());
+		}
+		let mut account_buf = [0_u8; 20];
+		let account_str = account.format_into(&mut account_buf);
+		let mut channel_buf = [0_u8; 20];
+		let channel_str = channel.map(|c| c.format_into(&mut channel_buf));
+		let order = if oldest { "ASC" } else { "DESC" };
+		match mode {
+			LocalSearchMode::FullText => {
+				let mut fts_terms = Vec::new();
+				for word in query.split_whitespace() {
+					let cleaned: String = word.chars().filter(|c| *c != '"').collect();
+					if !cleaned.is_empty() {
+						fts_terms.push(format!("\"{cleaned}\"*"));
+					}
+				}
+				if fts_terms.is_empty() {
+					return Ok(LocalSearchPage::default());
+				}
+				let fts_expr = fts_terms.join(" ");
+				let count_sql = "SELECT count(*) FROM messages_fts WHERE account=?1 AND messages_fts MATCH ?2 AND (?3 IS NULL OR channel=?3)";
+				let total: i64 = self.0.query_row(
+					count_sql,
+					params![account_str, &fts_expr, channel_str],
+					|r| r.get(0),
+				)?;
+				if total > 0 {
+					let select_sql = format!(
+						"SELECT {MESSAGE_COLUMNS_M}, m.channel FROM messages_fts \
+						 JOIN messages m ON m.account=messages_fts.account AND m.channel=messages_fts.channel AND m.id=messages_fts.id \
+						 WHERE messages_fts.account=?1 AND messages_fts MATCH ?2 AND (?3 IS NULL OR messages_fts.channel=?3) \
+						 ORDER BY length(m.id) {order}, m.id {order} LIMIT ?4 OFFSET ?5"
+					);
+					let mut stmt = self.0.prepare(&select_sql)?;
+					let mut rows = stmt.query(params![
+						account_str,
+						&fts_expr,
+						channel_str,
+						limit as i64,
+						offset as i64
+					])?;
+					let hits = Self::collect_search_rows(&mut rows)?;
+					return Ok(LocalSearchPage {
+						hits,
+						total: total as u64,
+					});
+				}
+				// Unspaced scripts (e.g. Thai/CJK mid-word substrings) fallback to bounded scan.
+				let terms_lower: Vec<String> =
+					query.split_whitespace().map(str::to_lowercase).collect();
+				self.scan_messages(
+					account_str,
+					channel_str,
+					order,
+					offset,
+					limit,
+					|name, content| {
+						let c_low = content.to_lowercase();
+						let n_low = name.to_lowercase();
+						terms_lower
+							.iter()
+							.all(|t| c_low.contains(t) || n_low.contains(t))
+					},
+				)
+			}
+			LocalSearchMode::Regex => {
+				let compiled =
+					regex::Regex::compile(query).map_err(|_| StoreError::Incompatible)?;
+				self.scan_messages(
+					account_str,
+					channel_str,
+					order,
+					offset,
+					limit,
+					|name, content| compiled.is_match(content) || compiled.is_match(name),
+				)
+			}
+		}
+	}
+	fn collect_search_rows(rows: &mut rusqlite::Rows<'_>) -> Result<Vec<(Id, Message)>> {
+		let mut hits = Vec::new();
+		let mut bytes = 0;
+		while let Some(row) = rows.next()? {
+			let msg_channel = row
+				.get_ref(28)?
+				.as_str()
+				.map_err(|_| StoreError::Incompatible)?
+				.parse::<Id>()
+				.map_err(|_| StoreError::Incompatible)?;
+			let msg = Self::decode_message_row(row, msg_channel)?;
+			bytes += msg.bytes();
+			if bytes > MAX_WINDOW_BYTES {
+				break;
+			}
+			hits.push((msg_channel, msg));
+		}
+		Ok(hits)
+	}
+	fn scan_messages(
+		&self,
+		account_str: &str,
+		channel_str: Option<&str>,
+		order: &str,
+		offset: usize,
+		limit: usize,
+		predicate: impl Fn(&str, &str) -> bool,
+	) -> Result<LocalSearchPage> {
+		let sql = if channel_str.is_some() {
+			format!(
+				"SELECT {MESSAGE_COLUMNS}, channel FROM messages WHERE account=?1 AND channel=?2 ORDER BY length(id) {order}, id {order}"
+			)
+		} else {
+			format!(
+				"SELECT {MESSAGE_COLUMNS}, channel FROM messages WHERE account=?1 ORDER BY length(id) {order}, id {order}"
+			)
+		};
+		let mut stmt = self.0.prepare(&sql)?;
+		let mut rows = if let Some(ch) = channel_str {
+			stmt.query(params![account_str, ch])?
+		} else {
+			stmt.query(params![account_str])?
+		};
+		let mut hits = Vec::new();
+		let mut total = 0_u64;
+		let mut bytes = 0_usize;
+		while let Some(row) = rows.next()? {
+			let name = row
+				.get_ref(2)?
+				.as_str()
+				.map_err(|_| StoreError::Incompatible)?;
+			let content = row
+				.get_ref(3)?
+				.as_str()
+				.map_err(|_| StoreError::Incompatible)?;
+			if !predicate(name, content) {
+				continue;
+			}
+			let idx = total as usize;
+			total += 1;
+			if idx >= offset && hits.len() < limit {
+				let msg_channel = row
+					.get_ref(28)?
+					.as_str()
+					.map_err(|_| StoreError::Incompatible)?
+					.parse::<Id>()
+					.map_err(|_| StoreError::Incompatible)?;
+				let msg = Self::decode_message_row(row, msg_channel)?;
+				bytes += msg.bytes();
+				if bytes <= MAX_WINDOW_BYTES {
+					hits.push((msg_channel, msg));
+				}
+			}
+		}
+		Ok(LocalSearchPage { hits, total })
 	}
 	pub fn save_draft(&mut self, account: Id, channel: Id, content: &str) -> Result<()> {
 		if content.len() > 8192 {
@@ -1470,19 +1758,13 @@ impl LocalStore {
 		Ok(drafts)
 	}
 	pub fn clear_history(&mut self, account: Id) -> Result<()> {
+		let mut account_buf = [0_u8; 20];
+		let account = account.format_into(&mut account_buf);
 		let transaction = self.0.transaction()?;
-		transaction.execute(
-			"DELETE FROM messages WHERE account=?1",
-			[account.to_string()],
-		)?;
-		transaction.execute(
-			"DELETE FROM channels WHERE account=?1",
-			[account.to_string()],
-		)?;
-		transaction.execute(
-			"DELETE FROM history_starts WHERE account=?1",
-			[account.to_string()],
-		)?;
+		transaction.execute("DELETE FROM messages WHERE account=?1", [account])?;
+		transaction.execute("DELETE FROM messages_fts WHERE account=?1", [account])?;
+		transaction.execute("DELETE FROM channels WHERE account=?1", [account])?;
+		transaction.execute("DELETE FROM history_starts WHERE account=?1", [account])?;
 		transaction.commit()?;
 		self.0
 			.execute_batch("PRAGMA wal_checkpoint(TRUNCATE); PRAGMA incremental_vacuum(64);")?;
@@ -1492,16 +1774,21 @@ impl LocalStore {
 		if ids.len() > 100 || account.0 == 0 || channel.0 == 0 || ids.iter().any(|id| id.0 == 0) {
 			return Err(StoreError::Capacity);
 		}
+		let mut account_buf = [0_u8; 20];
+		let mut channel_buf = [0_u8; 20];
+		let account = account.format_into(&mut account_buf);
+		let channel = channel.format_into(&mut channel_buf);
 		let transaction = self.0.transaction()?;
 		{
 			let mut statement = transaction
 				.prepare("DELETE FROM messages WHERE account=?1 AND channel=?2 AND id=?3")?;
+			let mut fts = transaction
+				.prepare("DELETE FROM messages_fts WHERE account=?1 AND channel=?2 AND id=?3")?;
 			for id in ids {
-				statement.execute(params![
-					account.to_string(),
-					channel.to_string(),
-					id.to_string()
-				])?;
+				let mut id_buf = [0_u8; 20];
+				let id = id.format_into(&mut id_buf);
+				statement.execute(params![account, channel, id])?;
+				fts.execute(params![account, channel, id])?;
 			}
 		}
 		transaction.commit()?;
@@ -1658,6 +1945,7 @@ impl LocalStore {
 		let transaction = self.0.transaction()?;
 		for table in [
 			"messages",
+			"messages_fts",
 			"channels",
 			"history_starts",
 			"drafts",
@@ -3768,5 +4056,179 @@ impl LocalStore {
 		);
 		assert_eq!(store.reading_preferences().unwrap(), preferences);
 		println!("Double-click reaction migration, roundtrip and bounds passed in memory");
+	}
+}
+
+#[cfg(test)]
+mod search_tests {
+	use super::*;
+
+	#[test]
+	fn fts5_and_regex_search_stay_synced_with_deletions_and_handle_thai() {
+		let mut store =
+			LocalStore::initialize(rusqlite::Connection::open_in_memory().unwrap()).unwrap();
+		let account = Id(10);
+		let ch1 = Id(100);
+		let ch2 = Id(200);
+		let m1 = Message {
+			id: Id(1),
+			channel: ch1,
+			author: User {
+				id: Id(50),
+				name: "Alice".into(),
+				avatar: None,
+				webhook: false,
+				kind: model::AccountKind::Human,
+				discriminator: 0,
+				primary_guild: None,
+				cosmetics: None,
+			},
+			content: "Rust deployment pipeline ready build 42".into(),
+			edited: false,
+			edited_at: None,
+			reply_to: None,
+			reply_deleted: false,
+			forwarded: false,
+			unsupported: false,
+			extra_content: model::ExtraContent::default(),
+			kind: 0,
+			interaction: None,
+			nonce: None,
+			revision: 0,
+			embeds: Vec::new(),
+			author_nick: None,
+			author_roles: Vec::new(),
+			mention_roles: Vec::new(),
+			mention_everyone: false,
+			suppress_notifications: false,
+			mentions: Vec::new(),
+			embeds_suppressed: false,
+			attachments: Vec::new(),
+			sticker_items: Vec::new(),
+			reactions: None,
+			components: Vec::new(),
+			application_id: None,
+			flags: 0,
+			ephemeral: false,
+			poll: None,
+		};
+		let mut m2 = m1.clone();
+		m2.id = Id(2);
+		m2.channel = ch2;
+		m2.author.name = "สมชาย".into();
+		m2.content = "สวัสดีครับวันนี้ทดสอบระบบค้นหาภาษาไทย".into();
+
+		store
+			.save_channel(account, ch1, std::slice::from_ref(&m1), false)
+			.unwrap();
+		store
+			.save_channel(account, ch2, std::slice::from_ref(&m2), false)
+			.unwrap();
+
+		// FTS5 prefix match across all channels and channel-scoped.
+		let page = store
+			.search_messages(
+				account,
+				LocalSearchRequest {
+					channel: None,
+					query: "deploy",
+					mode: LocalSearchMode::FullText,
+					oldest: false,
+					offset: 0,
+					limit: 10,
+				},
+			)
+			.unwrap();
+		assert_eq!(page.total, 1);
+		assert_eq!(page.hits[0].1.id, Id(1));
+		assert!(
+			store
+				.search_messages(
+					account,
+					LocalSearchRequest {
+						channel: Some(ch2),
+						query: "deploy",
+						mode: LocalSearchMode::FullText,
+						oldest: false,
+						offset: 0,
+						limit: 10,
+					},
+				)
+				.unwrap()
+				.hits
+				.is_empty()
+		);
+
+		// Thai mid-sentence substring works via fallback cleanly.
+		let thai_page = store
+			.search_messages(
+				account,
+				LocalSearchRequest {
+					channel: None,
+					query: "ทดสอบระบบ",
+					mode: LocalSearchMode::FullText,
+					oldest: false,
+					offset: 0,
+					limit: 10,
+				},
+			)
+			.unwrap();
+		assert_eq!(thai_page.total, 1);
+		assert_eq!(thai_page.hits[0].1.id, Id(2));
+
+		// Regex matching with bounded PikeVM engine.
+		let re_page = store
+			.search_messages(
+				account,
+				LocalSearchRequest {
+					channel: None,
+					query: r"(?i)pipeline.*build\s+\d+",
+					mode: LocalSearchMode::Regex,
+					oldest: false,
+					offset: 0,
+					limit: 10,
+				},
+			)
+			.unwrap();
+		assert_eq!(re_page.total, 1);
+		assert_eq!(re_page.hits[0].1.id, Id(1));
+
+		// Invalid/unbalanced regex rejected cleanly.
+		assert_eq!(
+			store
+				.search_messages(
+					account,
+					LocalSearchRequest {
+						channel: None,
+						query: "[unclosed",
+						mode: LocalSearchMode::Regex,
+						oldest: false,
+						offset: 0,
+						limit: 10,
+					},
+				)
+				.err(),
+			Some(StoreError::Incompatible)
+		);
+
+		// Deleting message updates FTS5 index too.
+		store.delete_messages(account, ch1, &[Id(1)]).unwrap();
+		assert_eq!(
+			store
+				.search_messages(
+					account,
+					LocalSearchRequest {
+						channel: None,
+						query: "deploy",
+						mode: LocalSearchMode::FullText,
+						oldest: false,
+						offset: 0,
+						limit: 10,
+					},
+				)
+				.unwrap()
+				.total,
+			0
+		);
 	}
 }

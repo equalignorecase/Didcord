@@ -1512,7 +1512,9 @@ impl DiscordApi {
 					result,
 				}
 			}
-			Command::CancelSearch => Event::Failure(Failure::Protocol),
+			Command::LocalSearch { .. } | Command::CancelSearch => {
+				Event::Failure(Failure::Protocol)
+			}
 			Command::Gifs { query, request } => Event::Gifs {
 				request,
 				result: self.gifs(query.as_deref()).await,

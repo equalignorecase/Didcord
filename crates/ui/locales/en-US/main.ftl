@@ -2504,6 +2504,7 @@ search-overlays-search-for = Search for
 search-pane-close = Close
 # Context: pane
 search-pane-hide-matching-text-highlight = Hide matching-text highlight
+search-pane-local-cache = Local cache search (FTS5 / Regex)
 # Context: pane
 search-pane-indexing-is-incomplete-results-may-be-missing = Indexing is incomplete; results may be missing.
 # Context: pane

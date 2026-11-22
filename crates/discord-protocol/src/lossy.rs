@@ -36,6 +36,55 @@ pub(crate) fn recipients<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<crate::U
 	Lossy::<crate::UserDto, 64, true>::deserialize(d).map(|rows| rows.items)
 }
 
+trait BoundedList<'de, T>: Default {
+	const LIMIT: usize;
+	const TRUNCATE: bool;
+	fn reserve(&mut self, count: usize);
+	fn push_parsed(&mut self, value: Option<T>);
+	fn mark_truncated(&mut self);
+}
+
+fn deserialize_bounded<'de, D: Deserializer<'de>, T: Deserialize<'de>, L: BoundedList<'de, T>>(
+	d: D,
+) -> Result<L, D::Error> {
+	struct Elements<L, T>(PhantomData<(L, T)>);
+	impl<'de, T: Deserialize<'de>, L: BoundedList<'de, T>> Visitor<'de> for Elements<L, T> {
+		type Value = L;
+		fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+			f.write_str("a bounded list")
+		}
+		fn visit_unit<E>(self) -> Result<Self::Value, E> {
+			Ok(L::default())
+		}
+		fn visit_none<E>(self) -> Result<Self::Value, E> {
+			Ok(L::default())
+		}
+		fn visit_some<D: Deserializer<'de>>(self, d: D) -> Result<Self::Value, D::Error> {
+			d.deserialize_seq(self)
+		}
+		fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+			let mut out = L::default();
+			if let Some(hint) = seq.size_hint() {
+				out.reserve(hint.min(L::LIMIT).min(1024));
+			}
+			let mut seen = 0_usize;
+			while let Some(raw) = seq.next_element::<&'de RawValue>()? {
+				if seen == L::LIMIT {
+					if L::TRUNCATE {
+						out.mark_truncated();
+						continue;
+					}
+					return Err(serde::de::Error::custom("List capacity exceeded"));
+				}
+				seen += 1;
+				out.push_parsed(serde_json::from_str(raw.get()).ok());
+			}
+			Ok(out)
+		}
+	}
+	d.deserialize_option(Elements::<L, T>(PhantomData))
+}
+
 /// Positions are kept: a malformed element becomes `None`, so index-aligned lists
 /// (`merged_members`) still line up. More than `N` elements is an error unless `TRUNCATE`.
 /// Elements are split as borrowed raw values, so only use it on borrowed JSON input.
@@ -51,43 +100,26 @@ impl<T, const N: usize, const TRUNCATE: bool> Default for Slots<T, N, TRUNCATE> 
 		}
 	}
 }
+impl<'de, T: Deserialize<'de>, const N: usize, const TRUNCATE: bool> BoundedList<'de, T>
+	for Slots<T, N, TRUNCATE>
+{
+	const LIMIT: usize = N;
+	const TRUNCATE: bool = TRUNCATE;
+	fn reserve(&mut self, count: usize) {
+		self.items.reserve(count);
+	}
+	fn push_parsed(&mut self, value: Option<T>) {
+		self.items.push(value);
+	}
+	fn mark_truncated(&mut self) {
+		self.truncated = true;
+	}
+}
 impl<'de, T: Deserialize<'de>, const N: usize, const TRUNCATE: bool> Deserialize<'de>
 	for Slots<T, N, TRUNCATE>
 {
 	fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-		struct Elements<T, const N: usize, const TRUNCATE: bool>(PhantomData<T>);
-		impl<'de, T: Deserialize<'de>, const N: usize, const TRUNCATE: bool> Visitor<'de>
-			for Elements<T, N, TRUNCATE>
-		{
-			type Value = Slots<T, N, TRUNCATE>;
-			fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-				f.write_str("a bounded list")
-			}
-			fn visit_unit<E>(self) -> Result<Self::Value, E> {
-				Ok(Slots::default())
-			}
-			fn visit_none<E>(self) -> Result<Self::Value, E> {
-				Ok(Slots::default())
-			}
-			fn visit_some<D: Deserializer<'de>>(self, d: D) -> Result<Self::Value, D::Error> {
-				d.deserialize_seq(self)
-			}
-			fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
-				let mut slots = Slots::default();
-				while let Some(raw) = seq.next_element::<&'de RawValue>()? {
-					if slots.items.len() == N {
-						if TRUNCATE {
-							slots.truncated = true;
-							continue;
-						}
-						return Err(serde::de::Error::custom("List capacity exceeded"));
-					}
-					slots.items.push(serde_json::from_str(raw.get()).ok());
-				}
-				Ok(slots)
-			}
-		}
-		d.deserialize_option(Elements::<T, N, TRUNCATE>(PhantomData))
+		deserialize_bounded::<D, T, Self>(d)
 	}
 }
 
@@ -104,17 +136,29 @@ impl<T, const N: usize, const TRUNCATE: bool> Default for Lossy<T, N, TRUNCATE> 
 		}
 	}
 }
+impl<'de, T: Deserialize<'de>, const N: usize, const TRUNCATE: bool> BoundedList<'de, T>
+	for Lossy<T, N, TRUNCATE>
+{
+	const LIMIT: usize = N;
+	const TRUNCATE: bool = TRUNCATE;
+	fn reserve(&mut self, count: usize) {
+		self.items.reserve(count);
+	}
+	fn push_parsed(&mut self, value: Option<T>) {
+		match value {
+			Some(item) => self.items.push(item),
+			None => self.skipped = true,
+		}
+	}
+	fn mark_truncated(&mut self) {
+		self.skipped = true;
+	}
+}
 impl<'de, T: Deserialize<'de>, const N: usize, const TRUNCATE: bool> Deserialize<'de>
 	for Lossy<T, N, TRUNCATE>
 {
 	fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-		let slots = Slots::<T, N, TRUNCATE>::deserialize(d)?;
-		let total = slots.items.len();
-		let items: Vec<T> = slots.items.into_iter().flatten().collect();
-		Ok(Self {
-			skipped: slots.truncated || items.len() != total,
-			items,
-		})
+		deserialize_bounded::<D, T, Self>(d)
 	}
 }
 

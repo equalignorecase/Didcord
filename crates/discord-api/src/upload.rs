@@ -191,11 +191,37 @@ impl Source {
 			bytes: Some(bytes.into()),
 		})
 	}
+	/// Locally compressed attachment bytes ready for upload within the account's limit.
+	pub fn compressed_bytes(filename: String, bytes: Vec<u8>) -> Result<Self, &'static str> {
+		if filename.trim().is_empty()
+			|| matches!(filename.as_str(), "." | "..")
+			|| filename.len() > 256
+			|| filename
+				.chars()
+				.any(|c| c.is_control() || matches!(c, '/' | '\\' | ':'))
+		{
+			return Err("Unsupported filename");
+		}
+		if bytes.is_empty() || bytes.len() as u64 > MAX_BYTES {
+			return Err("Compressed file is empty or exceeds Discord's 500 MB maximum");
+		}
+		Ok(Self {
+			path: PathBuf::new(),
+			filename,
+			size: bytes.len() as u64,
+			modified: SystemTime::UNIX_EPOCH,
+			bytes: Some(bytes.into()),
+		})
+	}
 	pub fn filename(&self) -> &str {
 		&self.filename
 	}
 	pub fn size(&self) -> u64 {
 		self.size
+	}
+	/// Original filesystem path when the source was picked from disk.
+	pub fn local_path(&self) -> Option<&std::path::Path> {
+		(!self.path.as_os_str().is_empty()).then_some(self.path.as_path())
 	}
 	/// Bytes this selection holds in session memory; chosen files hold only their metadata.
 	pub fn resident_bytes(&self) -> u64 {
