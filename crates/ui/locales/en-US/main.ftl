@@ -4100,6 +4100,18 @@ updates-update-settings-nightly = Nightly
 # Context: update_settings
 updates-update-settings-package-manager-updates = Package manager updates
 # Context: update_settings
+updates-update-settings-checking = Checking for updates…
+# Context: update_settings
+updates-update-settings-wait-seconds = Please wait { $seconds }s before checking for updates again.
+# Context: update_settings
+updates-update-settings-up-to-date = Didcord is up to date on this channel.
+# Context: update_settings
+updates-update-settings-not-checked = Updates have not been checked yet.
+# Context: update_settings
+updates-update-settings-not-checked-channel = Updates have not been checked on this channel yet.
+# Context: update_settings
+updates-update-settings-no-release = No published release on this channel yet.
+# Context: update_settings
 updates-update-settings-preferences = Preferences
 # Context: update_settings
 updates-update-settings-production = Production

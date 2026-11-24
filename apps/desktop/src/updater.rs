@@ -22,6 +22,8 @@ const RELEASES: &str = "https://api.github.com/repos/equalignorecase/Didcord/rel
 const MAX_METADATA: usize = 2 * 1024 * 1024;
 const MAX_DOWNLOAD: u64 = 512 * 1024 * 1024;
 const CHECK_INTERVAL: Duration = Duration::from_secs(60 * 60);
+const MANUAL_CHECK_COOLDOWN: Duration = Duration::from_secs(15);
+const NO_PUBLISHED_RELEASE: &str = "No published release is available on this channel yet.";
 const LOG_RELEASES: usize = 30;
 const LOG_NOTES: usize = 16 * 1024;
 const LOG_ITEMS: usize = 60;
@@ -58,6 +60,7 @@ struct Staged {
 }
 enum Outcome {
 	Checked(Option<Package>, Vec<ui::updates::LogEntry>),
+	NoPublishedRelease,
 	Downloaded(Staged),
 	Prepared(install::Prepared),
 	Cleaned,
@@ -72,7 +75,9 @@ pub struct Updater {
 	demo: bool,
 	channel: Option<bool>,
 	next_check: Instant,
-	last_check: Option<Instant>,
+	last_manual_check: Option<Instant>,
+	cooldown_until: Option<Instant>,
+	base_status: Option<String>,
 	job: Option<Job>,
 	package: Option<Package>,
 	staged: Option<Staged>,
@@ -92,12 +97,14 @@ impl Updater {
 			demo,
 			channel: None,
 			next_check: Instant::now(),
-			last_check: None,
+			last_manual_check: None,
+			cooldown_until: None,
+			base_status: None,
 			job: None,
 			package: None,
 			staged: None,
 			cleanup_pending: None,
-			status: "Updates have not been checked yet.".into(),
+			status: ui::i18n::translate("updates-update-settings-not-checked"),
 			armed: false,
 			helper: None,
 			close_requested: false,
@@ -180,8 +187,10 @@ impl Updater {
 			self.cancel_restart();
 			self.discard_stage();
 			self.next_check = Instant::now();
-			self.last_check = None;
-			self.status = "Updates have not been checked on this channel yet.".into();
+			self.last_manual_check = None;
+			self.cooldown_until = None;
+			self.base_status = None;
+			self.status = ui::i18n::translate("updates-update-settings-not-checked-channel");
 			view.log.clear();
 		}
 		if let Some(job) = &self.job {
@@ -204,7 +213,7 @@ impl Updater {
 							Ok(Outcome::Checked(package, log)) => {
 								self.log = Some(log);
 								self.status = package.as_ref().map_or_else(
-									|| "Didcord is up to date on this channel.".into(),
+									|| ui::i18n::translate("updates-update-settings-up-to-date"),
 									|p| {
 										if install::flatpak_session() {
 											format!(
@@ -228,8 +237,14 @@ impl Updater {
 										}
 									},
 								);
+								self.auto_download = package.is_some();
 								self.package = package;
-								self.auto_download = true;
+							}
+							Ok(Outcome::NoPublishedRelease) => {
+								self.package = None;
+								self.auto_download = false;
+								self.status =
+									ui::i18n::translate("updates-update-settings-no-release");
 							}
 							Ok(Outcome::Downloaded(stage)) => {
 								self.staged = Some(stage);
@@ -260,6 +275,8 @@ impl Updater {
 				Err(mpsc::TryRecvError::Empty) => {}
 			}
 		}
+		let now = Instant::now();
+		self.advance_cooldown(now);
 		if self.job.is_none() {
 			if let Some(stage) = self.cleanup_pending.take() {
 				let helper = self.helper.take();
@@ -311,23 +328,21 @@ impl Updater {
 				self.start(runtime, ctx, total, move |cancel, progress| {
 					download_package(package, cancel, progress)
 				});
-			} else if self.staged.is_none() && (check || Instant::now() >= self.next_check) {
-				if check
-					&& self
-						.last_check
-						.is_some_and(|last| last.elapsed() < Duration::from_secs(60))
-				{
-					self.status = "Please wait one minute between update checks.".into();
+			} else if self.staged.is_none() && (check || now >= self.next_check) {
+				if check && self.enter_manual_cooldown_if_needed(now) {
+					// Cooldown active after a recent manual check; live countdown handles status.
 				} else {
-					self.last_check = Some(Instant::now());
-					self.next_check = Instant::now() + CHECK_INTERVAL;
+					self.cooldown_until = None;
+					self.base_status = None;
+					if check {
+						self.last_manual_check = Some(now);
+					}
+					self.next_check = now + CHECK_INTERVAL;
 					let nightly = view.nightly;
 					self.start(runtime, ctx, 0, move |cancel, _| async move {
-						check_release(nightly, cancel)
-							.await
-							.map(|(package, log)| Outcome::Checked(package, log))
+						check_release(nightly, cancel).await
 					});
-					self.status = "Checking for updates…".into();
+					self.status = ui::i18n::translate("updates-update-settings-checking");
 				}
 			}
 		}
@@ -345,6 +360,13 @@ impl Updater {
 		}
 		if self.job.is_some() {
 			ctx.request_repaint_after(Duration::from_millis(200));
+		} else if let Some(until) = self.cooldown_until {
+			let remaining = until.saturating_duration_since(Instant::now());
+			ctx.request_repaint_after(
+				remaining
+					.min(Duration::from_secs(1))
+					.max(Duration::from_millis(100)),
+			);
 		} else if self.staged.is_none() {
 			ctx.request_repaint_after(
 				self.next_check
@@ -354,6 +376,37 @@ impl Updater {
 		}
 		std::mem::take(&mut self.close_requested)
 	}
+	fn advance_cooldown(&mut self, now: Instant) {
+		if let Some(until) = self.cooldown_until {
+			if now >= until {
+				self.cooldown_until = None;
+				if let Some(previous) = self.base_status.take() {
+					self.status = previous;
+				}
+			} else {
+				self.status = cooldown_status(until, now);
+			}
+		}
+	}
+
+	fn enter_manual_cooldown_if_needed(&mut self, now: Instant) -> bool {
+		let Some(last) = self.last_manual_check else {
+			return false;
+		};
+		let Some(until) = last.checked_add(MANUAL_CHECK_COOLDOWN) else {
+			return false;
+		};
+		if now >= until {
+			return false;
+		}
+		if self.cooldown_until.is_none() {
+			self.base_status = Some(std::mem::take(&mut self.status));
+		}
+		self.cooldown_until = Some(until);
+		self.status = cooldown_status(until, now);
+		true
+	}
+
 	fn start<F, Fut>(&mut self, runtime: &Runtime, ctx: &egui::Context, total: u64, work: F)
 	where
 		F: FnOnce(Arc<AtomicBool>, Arc<AtomicU64>) -> Fut + Send + 'static,
@@ -489,7 +542,7 @@ async fn response(client: &wreq::Client, url: &str) -> Result<wreq::Response, St
 	match response.status().as_u16() {
 		200 => Ok(response),
 		403 | 429 => Err("GitHub's update limit was reached. Try again later.".into()),
-		404 => Err("No published release is available on this channel yet.".into()),
+		404 => Err(NO_PUBLISHED_RELEASE.into()),
 		_ => Err("GitHub could not provide the update. Try again later.".into()),
 	}
 }
@@ -658,7 +711,7 @@ fn select_release(
 		})
 		.max_by(|a, b| a.0.cmp(&b.0));
 	let Some((version, release)) = candidate else {
-		return Err("No published release is available on this channel yet.".into());
+		return Err(NO_PUBLISHED_RELEASE.into());
 	};
 	// Channel changes never silently downgrade an installed build.
 	if version <= *current {
@@ -715,17 +768,18 @@ fn select_release(
 		zsync,
 	}))
 }
-async fn check_release(
-	nightly: bool,
-	cancel: Arc<AtomicBool>,
-) -> Result<(Option<Package>, Vec<ui::updates::LogEntry>), String> {
+async fn check_release(nightly: bool, cancel: Arc<AtomicBool>) -> Result<Outcome, String> {
 	let client = client()?;
 	let endpoint = if nightly {
 		format!("{RELEASES}?per_page=100")
 	} else {
 		format!("{RELEASES}/latest")
 	};
-	let body = bounded_body(&client, &endpoint, MAX_METADATA, &cancel).await?;
+	let body = match bounded_body(&client, &endpoint, MAX_METADATA, &cancel).await {
+		Ok(body) => body,
+		Err(error) if error == NO_PUBLISHED_RELEASE => return Ok(Outcome::NoPublishedRelease),
+		Err(error) => return Err(error),
+	};
 	let releases = if nightly {
 		serde_json::from_slice::<Vec<Release>>(&body)
 	} else {
@@ -735,7 +789,11 @@ async fn check_release(
 	let current = semver::Version::parse(env!("CARGO_PKG_VERSION"))
 		.map_err(|_| "This build has an invalid version.".to_owned())?;
 	let log = release_log(&releases, nightly, &current);
-	select_release(releases, nightly, &current).map(|package| (package, log))
+	match select_release(releases, nightly, &current) {
+		Ok(package) => Ok(Outcome::Checked(package, log)),
+		Err(error) if error == NO_PUBLISHED_RELEASE => Ok(Outcome::NoPublishedRelease),
+		Err(error) => Err(error),
+	}
 }
 fn demo_log() -> Vec<ui::updates::LogEntry> {
 	[
@@ -964,4 +1022,56 @@ pub fn debug_check() -> Result<(), String> {
 		return Err(format!("Release notes parsed as {notes:?}."));
 	}
 	install::debug_check()
+}
+
+fn cooldown_status(until: Instant, now: Instant) -> String {
+	let seconds = until
+		.saturating_duration_since(now)
+		.as_millis()
+		.div_ceil(1000)
+		.max(1);
+	let seconds_text = seconds.to_string();
+	ui::i18n::translate_args(
+		"updates-update-settings-wait-seconds",
+		&[("seconds", &seconds_text)],
+	)
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn manual_cooldown_does_not_block_first_click_and_restores_status_when_elapsed() {
+		let mut updater = Updater::new(false);
+		let t0 = Instant::now();
+		// Even immediately after launch (no manual click recorded), manual check is allowed.
+		assert!(!updater.enter_manual_cooldown_if_needed(t0));
+
+		// Simulate a completed manual check with an idle status message.
+		updater.last_manual_check = Some(t0);
+		updater.status = "Didcord is up to date on this channel.".into();
+
+		// Clicking again within 15s starts countdown without overwriting base_status.
+		assert!(updater.enter_manual_cooldown_if_needed(t0 + Duration::from_secs(2)));
+		assert_eq!(
+			updater.base_status.as_deref(),
+			Some("Didcord is up to date on this channel.")
+		);
+		assert!(updater.status.contains("13"));
+
+		// A second click while in cooldown preserves the original base_status.
+		assert!(updater.enter_manual_cooldown_if_needed(t0 + Duration::from_secs(5)));
+		assert_eq!(
+			updater.base_status.as_deref(),
+			Some("Didcord is up to date on this channel.")
+		);
+		assert!(updater.status.contains("10"));
+
+		// Once 15s elapses, cooldown clears and restores the original status.
+		updater.advance_cooldown(t0 + MANUAL_CHECK_COOLDOWN);
+		assert!(updater.cooldown_until.is_none());
+		assert!(updater.base_status.is_none());
+		assert_eq!(updater.status, "Didcord is up to date on this channel.");
+	}
 }

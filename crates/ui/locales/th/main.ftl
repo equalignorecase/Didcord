@@ -81,6 +81,12 @@ updates-update-settings-copy-command = คัดลอกคำสั่ง
 updates-update-settings-nightly = Nightly
 updates-update-settings-production = Production
 updates-update-settings-release-channel = ช่องทางอัปเดต
+updates-update-settings-checking = กำลังตรวจสอบการอัปเดต…
+updates-update-settings-wait-seconds = โปรดรออีก { $seconds } วินาทีก่อนตรวจสอบการอัปเดตอีกครั้ง
+updates-update-settings-up-to-date = Didcord เป็นเวอร์ชันล่าสุดบนช่องทางนี้แล้ว
+updates-update-settings-not-checked = ยังไม่ได้ตรวจสอบการอัปเดต
+updates-update-settings-not-checked-channel = ยังไม่ได้ตรวจสอบการอัปเดตในช่องทางนี้
+updates-update-settings-no-release = ยังไม่มีเวอร์ชันเผยแพร่ในช่องทางนี้
 updates-update-settings-preferences = การตั้งค่า
 
 # Time format

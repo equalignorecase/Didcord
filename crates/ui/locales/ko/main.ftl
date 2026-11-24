@@ -4051,6 +4051,18 @@ updates-update-settings-nightly = Nightly
 # Context: update_settings
 updates-update-settings-package-manager-updates = 패키지 관리자 업데이트
 # Context: update_settings
+updates-update-settings-checking = 업데이트 확인 중…
+# Context: update_settings
+updates-update-settings-wait-seconds = 업데이트를 다시 확인하려면 { $seconds }초 기다려 주세요.
+# Context: update_settings
+updates-update-settings-up-to-date = 이 채널의 Didcord가 최신 버전입니다.
+# Context: update_settings
+updates-update-settings-not-checked = 아직 업데이트를 확인하지 않았습니다.
+# Context: update_settings
+updates-update-settings-not-checked-channel = 이 채널에서 아직 업데이트를 확인하지 않았습니다.
+# Context: update_settings
+updates-update-settings-no-release = 이 채널에 아직 게시된 릴리스가 없습니다.
+# Context: update_settings
 updates-update-settings-preferences = 환경 설정
 # Context: update_settings
 updates-update-settings-production = 정식
