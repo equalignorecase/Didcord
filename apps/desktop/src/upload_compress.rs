@@ -271,12 +271,19 @@ fn create_private_temp_dir() -> Option<TempDir> {
 	getrandom::fill(&mut random).ok()?;
 	let suffix: String = random.iter().map(|b| format!("{b:02x}")).collect();
 	let dir = std::env::temp_dir().join(format!("didcord-upload-compress-{suffix}"));
-	let mut builder = fs::DirBuilder::new();
-	#[cfg(unix)]
-	{
-		use std::os::unix::fs::DirBuilderExt;
-		builder.mode(0o700);
-	}
+	let builder = {
+		#[cfg(unix)]
+		{
+			use std::os::unix::fs::DirBuilderExt;
+			let mut builder = fs::DirBuilder::new();
+			builder.mode(0o700);
+			builder
+		}
+		#[cfg(not(unix))]
+		{
+			fs::DirBuilder::new()
+		}
+	};
 	builder.create(&dir).ok()?;
 	Some(TempDir(dir))
 }
