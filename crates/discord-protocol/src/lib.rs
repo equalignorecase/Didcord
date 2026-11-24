@@ -51,10 +51,14 @@ pub use reactions::{GuildEmojisUpdate, ReactionDelta, ReactionEmojiTarget, React
 use serde::Deserialize;
 use serde_json::value::RawValue;
 
-#[derive(Deserialize, Debug, PartialEq, Eq)]
-#[serde(try_from = "String")]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Timestamp(i128);
 impl Timestamp {
+	pub fn parse(value: &str) -> Result<Self, &'static str> {
+		time::OffsetDateTime::parse(value, &time::format_description::well_known::Rfc3339)
+			.map(|t| Self(t.unix_timestamp_nanos()))
+			.map_err(|_| "Invalid service timestamp")
+	}
 	pub fn unix_ms(&self) -> Option<i64> {
 		i64::try_from(self.0 / 1_000_000).ok()
 	}
@@ -62,9 +66,22 @@ impl Timestamp {
 impl TryFrom<String> for Timestamp {
 	type Error = &'static str;
 	fn try_from(value: String) -> Result<Self, Self::Error> {
-		time::OffsetDateTime::parse(&value, &time::format_description::well_known::Rfc3339)
-			.map(|t| Self(t.unix_timestamp_nanos()))
-			.map_err(|_| "Invalid service timestamp")
+		Self::parse(&value)
+	}
+}
+impl<'de> Deserialize<'de> for Timestamp {
+	fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+		struct TimestampVisitor;
+		impl serde::de::Visitor<'_> for TimestampVisitor {
+			type Value = Timestamp;
+			fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+				f.write_str("an RFC 3339 timestamp string")
+			}
+			fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Timestamp, E> {
+				Timestamp::parse(value).map_err(E::custom)
+			}
+		}
+		d.deserialize_str(TimestampVisitor)
 	}
 }
 pub const MAX_WIRE: usize = 4 * 1024 * 1024;

@@ -1,5 +1,9 @@
 //! One bounded decoder and reorder window per authenticated remote speaker.
-use crate::{Frame, crypto::MAX_PARTICIPANTS, jitter::Jitter};
+use crate::{
+	Frame,
+	crypto::MAX_PARTICIPANTS,
+	jitter::{Jitter, Popped},
+};
 use opus2::{Channels, Decoder};
 
 struct Speaker {
@@ -72,6 +76,12 @@ impl Mixer {
 			speaker.activity = 0;
 		}
 	}
+	pub fn take_loss_events(&mut self) -> u64 {
+		self.speakers
+			.iter_mut()
+			.map(|speaker| speaker.jitter.take_losses())
+			.sum()
+	}
 	pub fn speaking(&self) -> impl Iterator<Item = u64> + '_ {
 		self.speakers
 			.iter()
@@ -104,11 +114,16 @@ impl Mixer {
 					if decoded == 8 {
 						break;
 					}
-					let Some(opus) = speaker.jitter.pop() else {
+					let Some(popped) = speaker.jitter.pop_frame() else {
 						break;
 					};
 					decoded += 1;
-					let limit = if opus.is_empty() {
+					let (opus, decode_fec, concealed) = match &popped {
+						Popped::Packet(packet) => (packet.as_slice(), false, false),
+						Popped::Fec(next_packet) => (next_packet.as_slice(), true, true),
+						Popped::Conceal => (&[][..], false, true),
+					};
+					let limit = if concealed {
 						// Preserve the lost packet duration; long concealment drains over 20ms ticks.
 						speaker
 							.decoder
@@ -121,13 +136,13 @@ impl Mixer {
 					let Ok(length) =
 						speaker
 							.decoder
-							.decode_float(&opus, &mut speaker.pcm[..limit], false)
+							.decode_float(opus, &mut speaker.pcm[..limit], decode_fec)
 					else {
 						continue;
 					};
 					speaker.offset = 0;
 					speaker.length = length;
-					heard |= !opus.is_empty() && opus != davey::OPUS_SILENCE_PACKET;
+					heard |= !concealed && opus != davey::OPUS_SILENCE_PACKET;
 				}
 				let count = (output.len() - filled).min(speaker.length - speaker.offset);
 				for (mixed, sample) in output[filled..filled + count]
@@ -345,5 +360,49 @@ mod tests {
 				}
 			}
 		}
+	}
+
+	#[test]
+	fn inband_fec_recovers_dropped_packet_and_reports_loss_events() {
+		let mut mixer = Mixer::default();
+		mixer.announce(1, 12).unwrap();
+		let mut encoder = Encoder::new(48_000, Channels::Mono, Application::Voip).unwrap();
+		encoder.set_bitrate(opus2::Bitrate::Bits(64_000)).unwrap();
+		encoder.set_inband_fec(true).unwrap();
+		encoder.set_packet_loss_perc(25).unwrap();
+		let mut reference = Decoder::new(48_000, Channels::Mono).unwrap();
+		let mut packets = Vec::new();
+		for sequence in 0u16..4 {
+			let mut encoded = [0; 1275];
+			let input: Vec<f32> = (0..960)
+				.map(|i| (((i + sequence as usize * 960) as f32) * 0.045).sin() * 0.35)
+				.collect();
+			let len = encoder.encode_float(&input, &mut encoded).unwrap();
+			let pkt = encoded[..len].to_vec();
+			packets.push(pkt.clone());
+			if sequence != 1 {
+				mixer.push(12, sequence, pkt);
+			}
+		}
+		assert!(mixer.pop().0.is_none());
+		assert!(mixer.pop().0.is_none());
+
+		let mut expected0 = vec![0.0; 960];
+		reference
+			.decode_float(&packets[0], &mut expected0, false)
+			.unwrap();
+		let mut expected1 = vec![0.0; 960];
+		reference
+			.decode_float(&packets[2], &mut expected1, true)
+			.unwrap();
+
+		let frame0 = mixer.pop().0.expect("packet 0");
+		let frame1 = mixer.pop().0.expect("FEC-recovered packet 1");
+		assert!(mixer.take_loss_events() >= 1);
+		assert_eq!(mixer.take_loss_events(), 0);
+		for (actual, expected) in frame1.iter().zip(expected1.iter()) {
+			assert!((actual - expected).abs() < 0.0001);
+		}
+		assert_eq!(frame0.len(), 960);
 	}
 }

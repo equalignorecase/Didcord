@@ -535,6 +535,9 @@ async fn run_inner(
 	let mut local_activity = 0;
 	let mut last_speakers = [0; 64];
 	let mut speakers_at = Instant::now();
+	let mut congested_voice = false;
+	let mut congestion_window = Instant::now();
+	let mut clean_voice_ticks = 0u16;
 	loop {
 		if let Some(reason) = reconnect.take() {
 			if encryption.is_none() || resume_attempts >= 2 {
@@ -749,6 +752,33 @@ async fn run_inner(
 						   if let Some(frame)=frame {drops = u64::from(playback.try_send(frame).is_err());}
 						   if !heard && remote_audio {heard=true;emit(Status::RemoteAudio).map_err(|_|"Call interface closed")?;}
 					   } else {mixer.clear();if let Some(aux)=&stream_audio {let _=stream_playout.next(aux,0,false,false);}}
+					   let loss_events = mixer.take_loss_events();
+					   if udp_failures.0.is_some() || loss_events >= 2 {
+						   clean_voice_ticks = 0;
+						   congestion_window = now;
+						   if !congested_voice {
+							   let _ = encoder.set_signal(opus2::Signal::Voice);
+							   let _ = encoder.set_vbr(true);
+							   let _ = encoder.set_vbr_constraint(true);
+							   let _ = encoder.set_bitrate(Bitrate::Bits(96_000));
+							   let _ = encoder.set_inband_fec(true);
+							   let _ = encoder.set_packet_loss_perc(15);
+							   congested_voice = true;
+						   }
+					   } else if congested_voice && now.duration_since(congestion_window) >= Duration::from_secs(1) {
+						   congestion_window = now;
+						   clean_voice_ticks += 1;
+						   if clean_voice_ticks >= 20 {
+							   let _ = encoder.set_bitrate(Bitrate::Bits(510_000));
+							   let _ = encoder.set_vbr(false);
+							   let _ = encoder.set_vbr_constraint(false);
+							   let _ = encoder.set_signal(opus2::Signal::Music);
+							   let _ = encoder.set_inband_fec(false);
+							   let _ = encoder.set_packet_loss_perc(0);
+							   congested_voice = false;
+							   clean_voice_ticks = 0;
+						   }
+					   }
 					   let [bridge_drops,bridge_underruns]=stream_playout.take_stats();
 					   metrics.stream_audio([0,0,0,0,0,0,0,0,bridge_drops,bridge_underruns]);
 					   metrics.poll(false, drops, stalled, 0);

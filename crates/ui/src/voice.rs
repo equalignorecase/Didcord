@@ -665,8 +665,9 @@ impl MessagingUi {
 				let locally_muted = self.voice_user_locally_muted(entry.participant.user);
 				let shown = shown_participant(state, entry);
 				inner.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-					// Deafening implies muted; Discord shows only the headphones then.
-					if shown.deafened || shown.server_deafened {
+					let deafened = shown.deafened || shown.server_deafened;
+					let muted = shown.muted || shown.server_muted || deafened;
+					if deafened {
 						status_icon(
 							ui,
 							crate::icons::Icon::HeadphonesSlash,
@@ -677,7 +678,8 @@ impl MessagingUi {
 								"voice-voice-participant-deafened"
 							},
 						);
-					} else if shown.muted || shown.server_muted {
+					}
+					if muted {
 						status_icon(
 							ui,
 							crate::icons::Icon::MicrophoneSlash,

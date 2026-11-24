@@ -743,6 +743,47 @@ mod macos {
 		}
 	}
 
+	fn configure_session(
+		session: &AVCaptureSession,
+		device: &AVCaptureDevice,
+		rate: CameraFrameRate,
+	) -> Result<(), &'static str> {
+		// SAFETY: Session already owns the input and output on this worker thread.
+		unsafe {
+			let mut input_error = None;
+			if session.canSetSessionPreset(AVCaptureSessionPresetInputPriority) {
+				session.beginConfiguration();
+				session.setSessionPreset(AVCaptureSessionPresetInputPriority);
+				let configured = configure(device, rate);
+				session.commitConfiguration();
+				match configured {
+					Ok(()) => return Ok(()),
+					Err(error) => input_error = Some(error),
+				}
+			}
+			// Virtual, Continuity, and preset-managed macOS cameras reject InputPriority;
+			// select a compatible preset and let AVCaptureVideoDataOutput scale to 720p BGRA.
+			let fallback_presets = [
+				AVCaptureSessionPreset1280x720,
+				AVCaptureSessionPresetHigh,
+				AVCaptureSessionPreset640x480,
+				AVCaptureSessionPresetMedium,
+			];
+			for preset in fallback_presets {
+				if session.canSetSessionPreset(preset) {
+					session.beginConfiguration();
+					session.setSessionPreset(preset);
+					session.commitConfiguration();
+					return Ok(());
+				}
+			}
+			match input_error {
+				Some(error) => Err(error),
+				None => Ok(()),
+			}
+		}
+	}
+
 	pub(super) fn run(
 		shared: &Arc<Shared>,
 		selected: Option<&str>,
@@ -778,14 +819,7 @@ mod macos {
 			}
 			session.addInput(&input);
 			session.addOutput(&output);
-			if !session.canSetSessionPreset(AVCaptureSessionPresetInputPriority) {
-				return Err("Camera does not support native format selection");
-			}
-			session.beginConfiguration();
-			session.setSessionPreset(AVCaptureSessionPresetInputPriority);
-			let configured = configure(&device, shared.rate);
-			session.commitConfiguration();
-			configured?;
+			configure_session(&session, &device, shared.rate)?;
 			let format = NSNumber::new_u32(kCVPixelFormatType_32BGRA);
 			let width = NSNumber::new_usize(WIDTH);
 			let height = NSNumber::new_usize(HEIGHT);

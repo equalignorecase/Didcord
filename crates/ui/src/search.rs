@@ -38,6 +38,7 @@ pub struct SearchUi {
 	pending_submit: bool,
 	filters_open: bool,
 	hide_highlight: bool,
+	local_mode: bool,
 	filter_draft: Option<filters::Draft>,
 	/// Names behind the readable `from:`/`mentions:`/`in:` tokens in `query`.
 	labels: filters::Labels,
@@ -167,8 +168,12 @@ impl SearchUi {
 			.search
 			.as_ref()
 			.is_some_and(|view| view.pins != self.pins)
-			|| (!state.can_search() && state.search.is_some())
-		{
+			|| (state.search.is_some()
+				&& if state.search_local.is_some() {
+					!state.can_search_local()
+				} else {
+					!state.can_search()
+				}) {
 			commands.push(state.clear_search());
 		}
 		let on_page = |id: Id| {
@@ -205,7 +210,7 @@ impl SearchUi {
 		commands: &mut Vec<Command>,
 	) {
 		let colors = design::palette(ui);
-		let allowed = state.can_search();
+		let allowed = state.can_search() || state.can_search_local();
 		let mut submit = false;
 		// Servers are searched as a whole, like Discord; `in:` narrows to channels.
 		let scope = state
@@ -304,6 +309,32 @@ impl SearchUi {
 		Ok(query)
 	}
 	fn submit(&mut self, state: &mut State, commands: &mut Vec<Command>) {
+		let trimmed = self.query.trim();
+		if let Some(pattern) = trimmed
+			.strip_prefix('/')
+			.and_then(|rest| rest.strip_suffix('/'))
+			.filter(|p| !p.is_empty())
+			.or_else(|| {
+				trimmed
+					.strip_prefix("re:")
+					.map(str::trim)
+					.filter(|p| !p.is_empty())
+			}) {
+			if let Some(command) = state.request_local_search(pattern.to_owned(), true) {
+				commands.push(command);
+				self.remember(trimmed.to_owned());
+				self.filters_open = false;
+			}
+			return;
+		}
+		if (self.local_mode || !state.can_search()) && state.can_search_local() {
+			if let Some(command) = state.request_local_search(trimmed.to_owned(), false) {
+				commands.push(command);
+				self.remember(trimmed.to_owned());
+				self.filters_open = false;
+			}
+			return;
+		}
 		if let Ok(query) = self.wire(state) {
 			self.search(state, commands, query);
 		}
@@ -1036,7 +1067,7 @@ impl SearchUi {
 		profile: &mut crate::profiles::ProfileSession,
 	) {
 		let colors = design::palette(ui);
-		let allowed = state.can_search();
+		let allowed = state.can_search() || state.can_search_local();
 		let mut submit = std::mem::take(&mut self.pending_submit) && !self.pins;
 		let mut media = media;
 		let mut target = None;
@@ -1117,6 +1148,10 @@ impl SearchUi {
 							&mut self.hide_highlight,
 							crate::i18n::translate("search-pane-hide-matching-text-highlight"),
 						);
+						ui.checkbox(
+							&mut self.local_mode,
+							crate::i18n::translate("search-pane-local-cache"),
+						);
 					});
 					let sort_label = crate::i18n::translate("search-pane-sort");
 					let sort = chip(ui, Chip::new(icons::Icon::SortArrows, &sort_label));
@@ -1141,9 +1176,15 @@ impl SearchUi {
 								.as_ref()
 								.filter(|view| !view.pins)
 								.map(|view| view.query.clone())
-								&& let Some(command) = state.request_search(query, None)
 							{
-								commands.push(command);
+								let cmd = if let Some(regex) = state.search_local {
+									state.request_local_search(query, regex)
+								} else {
+									state.request_search(query, None)
+								};
+								if let Some(command) = cmd {
+									commands.push(command);
+								}
 							}
 						}
 					});
@@ -1698,7 +1739,7 @@ impl SearchUi {
 		let card_id = ui.scope_id().with("card");
 		let previous = ui.data(|data| data.get_temp::<egui::Rect>(card_id));
 		let background = previous.map(|rect| ui.interact(rect, card_id, egui::Sense::click()));
-		let jumpable = state.can_search() && hit.id.0 < u64::MAX;
+		let jumpable = (state.can_search() || state.can_search_local()) && hit.id.0 < u64::MAX;
 		let hot = background.as_ref().is_some_and(|response| {
 			ui.rect_contains_pointer(response.rect) || response.has_focus()
 		});

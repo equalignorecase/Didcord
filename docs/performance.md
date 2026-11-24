@@ -1,5 +1,15 @@
 # Performance findings
 
+## Mascot asset refresh — November 19, 2026
+
+Compared with `d812cfe`, the decoded 512×896 icon atlas changes only cell 58; its other
+cells and dimensions are identical. Lossless PNG encoding changes its file size from
+27,326 to 30,467 bytes (+3,141). The 72×72 tray image changes from 8,579 to 1,712 bytes
+(-6,867), replacing the full-colour plate with a transparent monochrome mascot.
+These are file-byte counts, not CPU, memory or latency improvements. No rendering logic
+or dependencies changed. The release package comparison and native synthetic captures
+are recorded in [the evidence](pr-evidence/brand-icon-consistency/README.md).
+
 ## Rebrand validation baseline — November 18, 2026
 
 Offline macOS 27.2 arm64, Apple M1 / 8 GiB, Retina 2× and Metal, with pinned Rust

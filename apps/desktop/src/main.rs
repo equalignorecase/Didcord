@@ -62,6 +62,7 @@ mod sticker_upload;
 mod toggle_setting;
 mod tray_window;
 mod updater;
+mod upload_compress;
 mod uploads;
 mod video;
 mod voice;
@@ -1473,6 +1474,7 @@ fn demo_fetch(command: &Command) -> bool {
 		| Command::Archives { .. }
 		| Command::Pins { .. }
 		| Command::Search { .. }
+		| Command::LocalSearch { .. }
 		| Command::ThreadStarter { .. }
 		| Command::ThreadPreview { .. }
 		| Command::Gifs { .. }
@@ -4446,6 +4448,80 @@ impl Desktop {
 						})),
 					}
 				}
+				Command::LocalSearch {
+					channel,
+					query,
+					regex,
+					offset,
+					oldest,
+					request,
+					..
+				} => {
+					let mut hits = Vec::new();
+					let mut total = 0;
+					let query_lower = query.to_lowercase();
+					let mut valid = true;
+					for id in (1..=500).rev() {
+						let message = test_support::message(id, channel);
+						let matched = if regex {
+							match local_store::regex_match(&query, &message.content) {
+								Ok(true) => true,
+								Ok(false) => matches!(
+									local_store::regex_match(&query, &message.author.name),
+									Ok(true)
+								),
+								Err(_) => {
+									valid = false;
+									break;
+								}
+							}
+						} else {
+							message.content.to_lowercase().contains(&query_lower)
+								|| message.author.name.to_lowercase().contains(&query_lower)
+						};
+						if matched {
+							total += 1;
+							hits.push(model::SearchHit {
+								id: message.id,
+								channel,
+								author: message.author,
+								mentions: message.mentions,
+								excerpt: message.content.clone(),
+								attachments: message.attachments,
+								embeds: message.embeds,
+							});
+						}
+					}
+					if !valid {
+						Event::Search {
+							channel,
+							request,
+							result: Err(Failure::ProtocolAt(
+								"Invalid local search regular expression",
+							)),
+						}
+					} else {
+						hits.sort_unstable_by_key(|hit| std::cmp::Reverse(hit.id));
+						if oldest {
+							hits.reverse();
+						}
+						let hits = hits
+							.into_iter()
+							.skip(offset as usize)
+							.take(model::SEARCH_PAGE_SIZE)
+							.collect();
+						Event::Search {
+							channel,
+							request,
+							result: Ok(client_core::search::Outcome::Page(model::SearchPage {
+								hits,
+								total,
+								partial: false,
+								pin_cursor: None,
+							})),
+						}
+					}
+				}
 				Command::Gifs { query, request } => Event::Gifs {
 					request,
 					result: Ok(test_support::gif_page(query.as_deref())),
@@ -4709,6 +4785,40 @@ impl Desktop {
 				event,
 			});
 			self.state.status = "Offline fixture · action affected synthetic RAM only";
+			return;
+		}
+		if let Command::LocalSearch {
+			channel,
+			guild,
+			query,
+			regex,
+			offset,
+			oldest,
+			request,
+		} = command
+		{
+			let sent = self.cache.as_ref().is_some_and(|cache| {
+				cache.queue(
+					self.state.generation,
+					self.state.user.as_ref().map_or(model::Id(0), |u| u.id),
+					cache::Operation::SearchMessages {
+						channel,
+						scope_channel: guild.is_none().then_some(channel),
+						query,
+						regex,
+						oldest,
+						offset: offset as usize,
+						request,
+					},
+				)
+			});
+			if !sent {
+				self.state.apply_search(
+					channel,
+					request,
+					Err(Failure::CapacityAt("Local search cache is unavailable")),
+				);
+			}
 			return;
 		}
 		if let Some(connection) = &self.connection {
@@ -5125,6 +5235,37 @@ impl Desktop {
 					if let Some(cache) = &self.cache {
 						hydrate_cache_result(&mut self.state, &cache.history, outcome);
 					}
+				}
+				cache::Outcome::Search {
+					channel,
+					request,
+					result,
+				} => {
+					let mapped = match result {
+						Ok(page) => Ok(client_core::search::Outcome::Page(model::SearchPage {
+							hits: page
+								.hits
+								.into_iter()
+								.map(|(hit_channel, message)| model::SearchHit {
+									id: message.id,
+									channel: hit_channel,
+									author: message.author,
+									mentions: message.mentions,
+									excerpt: message.content,
+									attachments: message.attachments,
+									embeds: message.embeds,
+								})
+								.collect(),
+							total: page.total,
+							partial: false,
+							pin_cursor: None,
+						})),
+						Err(local_store::StoreError::Incompatible) => {
+							Err(Failure::ProtocolAt("Invalid local search pattern or query"))
+						}
+						Err(_) => Err(Failure::CapacityAt("Local search cache is unavailable")),
+					};
+					self.state.apply_search(channel, request, mapped);
 				}
 				cache::Outcome::Saved => {
 					if !self.cache_error {
@@ -6336,6 +6477,7 @@ impl eframe::App for Desktop {
 								self.uploads.select_pasted(
 									paste.generation,
 									paste.channel,
+									self.state.upload_limit(),
 									vec![source],
 									self.runtime.handle(),
 									&ctx,
@@ -6351,6 +6493,7 @@ impl eframe::App for Desktop {
 						if let Err(error) = self.uploads.select_pasted(
 							paste.generation,
 							paste.channel,
+							self.state.upload_limit(),
 							source,
 							self.runtime.handle(),
 							&ctx,
@@ -6429,6 +6572,7 @@ impl eframe::App for Desktop {
 				if let Err(error) = self.uploads.start_drop(
 					self.state.generation,
 					channel,
+					self.state.upload_limit(),
 					self.runtime.handle(),
 					&ctx,
 					dropped,
@@ -6897,6 +7041,7 @@ impl eframe::App for Desktop {
 				&& let Err(error) = self.uploads.start_choose(
 					self.state.generation,
 					channel,
+					self.state.upload_limit(),
 					self.runtime.handle(),
 					&ctx,
 					self.window.clone(),

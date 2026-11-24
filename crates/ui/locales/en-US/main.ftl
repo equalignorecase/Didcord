@@ -1750,6 +1750,17 @@ main-sign-in-preview-sample-conversations-no-discord-connection = Sample convers
 main-sign-in-screen-independent-and-open-source-not-affiliated-with-discord = Independent and open source · Not affiliated with Discord
 # Context: sign_in_screen
 main-sign-in-screen-didcord = Didcord
+main-sign-in-screen-early-preview = Early preview
+main-sign-in-button-continue-with-discord = Continue with Discord
+main-sign-in-button-waiting-for-discord = Waiting for Discord…
+main-sign-in-button-use-another-account = Use another account
+main-sign-in-status-no-saved-login = No saved login found. Sign in with Discord to save one.
+main-sign-in-status-saved-login-found = Saved login found; connecting to Discord
+main-sign-in-status-saved-login-invalid = Saved login is invalid. Sign in with Discord again.
+main-sign-in-status-saved-login-unavailable = Saved login unavailable; sign in with Discord.
+main-sign-in-disclosure-about-1 = Messaging, reactions, search and read markers have offline tests. Real Discord interoperability is still unverified; attachment uploads and advanced search remain incomplete.
+main-sign-in-disclosure-about-2 = Messages and drafts are cached locally. Login tokens use the operating system credential store.
+main-sign-in-disclosure-about-3 = Unofficial clients may put your Discord account at risk.
 # Context: ui
 main-ui-cancel = Cancel
 # Context: ui
@@ -2493,6 +2504,7 @@ search-overlays-search-for = Search for
 search-pane-close = Close
 # Context: pane
 search-pane-hide-matching-text-highlight = Hide matching-text highlight
+search-pane-local-cache = Local cache search (FTS5 / Regex)
 # Context: pane
 search-pane-indexing-is-incomplete-results-may-be-missing = Indexing is incomplete; results may be missing.
 # Context: pane
@@ -4087,6 +4099,18 @@ updates-update-settings-issue-diagnostics = Issue diagnostics
 updates-update-settings-nightly = Nightly
 # Context: update_settings
 updates-update-settings-package-manager-updates = Package manager updates
+# Context: update_settings
+updates-update-settings-checking = Checking for updates…
+# Context: update_settings
+updates-update-settings-wait-seconds = Please wait { $seconds }s before checking for updates again.
+# Context: update_settings
+updates-update-settings-up-to-date = Didcord is up to date on this channel.
+# Context: update_settings
+updates-update-settings-not-checked = Updates have not been checked yet.
+# Context: update_settings
+updates-update-settings-not-checked-channel = Updates have not been checked on this channel yet.
+# Context: update_settings
+updates-update-settings-no-release = No published release on this channel yet.
 # Context: update_settings
 updates-update-settings-preferences = Preferences
 # Context: update_settings

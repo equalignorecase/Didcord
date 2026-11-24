@@ -467,6 +467,7 @@ impl Desktop {
 		}
 	}
 	pub(super) fn sign_in_screen(&mut self, ui: &mut egui::Ui) {
+		ui::i18n::set_current(self.messaging.language);
 		let p = ui::design::palette(ui);
 		egui::CentralPanel::default()
 			.frame(egui::Frame::NONE.fill(ui::design::window_palette(ui).canvas))
@@ -492,9 +493,11 @@ impl Desktop {
 							);
 							ui.add_space(8.0);
 							ui.label(
-								egui::RichText::new("Early preview")
-									.size(13.0)
-									.color(p.muted),
+								egui::RichText::new(ui::i18n::translate(
+									"main-sign-in-screen-early-preview",
+								))
+								.size(13.0)
+								.color(p.muted),
 							);
 							ui.with_layout(
 								egui::Layout::right_to_left(egui::Align::Center),
@@ -524,6 +527,18 @@ impl Desktop {
 											.frame_when_inactive(false)
 											.corner_radius(8)
 										};
+									let prev_lang = self.messaging.language;
+									egui::containers::menu::MenuButton::from_button(quiet(
+										ui,
+										&ui::i18n::translate("language-group"),
+										p.muted,
+									))
+									.config(sticky())
+									.ui(ui, |ui| self.messaging.language_menu(ui));
+									if self.messaging.language != prev_lang {
+										self.save_app_preferences();
+									}
+									ui.add_space(4.0);
 									egui::containers::menu::MenuButton::from_button(quiet(
 										ui,
 										&ui::i18n::translate("page-appearance"),
@@ -617,18 +632,18 @@ impl Desktop {
 			ui.add_space(12.0);
 		}
 		let label = if waiting {
-			"Waiting for Discord…"
+			ui::i18n::translate("main-sign-in-button-waiting-for-discord")
 		} else if returning {
-			"Use another account"
+			ui::i18n::translate("main-sign-in-button-use-another-account")
 		} else {
-			"Continue with Discord"
+			ui::i18n::translate("main-sign-in-button-continue-with-discord")
 		};
 		let button = ui
 			.add_enabled_ui(idle, |ui| {
 				if returning {
-					ui::design::secondary_icon_button(ui, ui::icons::Icon::Plus, label)
+					ui::design::secondary_icon_button(ui, ui::icons::Icon::Plus, &label)
 				} else {
-					ui::design::primary_button(ui, label)
+					ui::design::primary_button(ui, &label)
 				}
 			})
 			.inner;
@@ -873,11 +888,26 @@ impl Desktop {
 							self.sign_in_failure_details(ui, p.muted);
 						}
 						if !self.fixture_only && !self.credential_status.is_empty() {
+							let status_text = match self.credential_status {
+								"No saved login found. Sign in with Discord to save one." => {
+									ui::i18n::translate("main-sign-in-status-no-saved-login")
+								}
+								"Saved login found; connecting to Discord" => {
+									ui::i18n::translate("main-sign-in-status-saved-login-found")
+								}
+								"Saved login is invalid. Sign in with Discord again." => {
+									ui::i18n::translate("main-sign-in-status-saved-login-invalid")
+								}
+								"Saved login unavailable; sign in with Discord." => {
+									ui::i18n::translate(
+										"main-sign-in-status-saved-login-unavailable",
+									)
+								}
+								other => ui::i18n::translate_if_key(other),
+							};
 							ui.add(
 								egui::Label::new(
-									egui::RichText::new(self.credential_status)
-										.size(12.0)
-										.color(p.muted),
+									egui::RichText::new(status_text).size(12.0).color(p.muted),
 								)
 								.wrap(),
 							);
@@ -1023,11 +1053,22 @@ impl Desktop {
 				})
 				.show(ui, |ui| {
 					ui.spacing_mut().item_spacing.y = 6.0;
-					for line in [
-						"Messaging, reactions, search and read markers have offline tests. Real Discord interoperability is still unverified; attachment uploads and advanced search remain incomplete.",
-						"Messages and drafts are cached locally. Login tokens use the operating system credential store.",
-						"Unofficial clients may put your Discord account at risk.",
+					for (fallback, key) in [
+						(
+							"Messaging, reactions, search and read markers have offline tests. Real Discord interoperability is still unverified; attachment uploads and advanced search remain incomplete.",
+							"main-sign-in-disclosure-about-1",
+						),
+						(
+							"Messages and drafts are cached locally. Login tokens use the operating system credential store.",
+							"main-sign-in-disclosure-about-2",
+						),
+						(
+							"Unofficial clients may put your Discord account at risk.",
+							"main-sign-in-disclosure-about-3",
+						),
 					] {
+						let text = ui::i18n::translate_if_key(key);
+						let line = if text == key { fallback } else { &text };
 						ui.add(
 							egui::Label::new(
 								egui::RichText::new(line).size(12.0).color(p.muted),
@@ -1108,16 +1149,45 @@ impl Desktop {
 	}
 }
 
-/// The Didcord mark on a solid accent tile; one shape at every size, no halo.
-fn app_mark(ui: &mut egui::Ui, size: f32) {
-	let p = ui::design::palette(ui);
-	let (mark, _) = ui.allocate_exact_size(egui::Vec2::splat(size), egui::Sense::hover());
-	ui.painter()
-		.rect_filled(mark, (size * 0.25).round() as u8, p.accent);
-	ui::icons::paint(
-		ui.painter(),
-		ui::icons::Icon::Didcord,
-		mark.shrink(size * 0.24),
-		p.accent_text,
+/// The Didcord brand logo mark, loaded from bundled brand artwork and painted with rounded corners.
+fn didcord_logo_texture(ctx: &egui::Context) -> egui::TextureHandle {
+	let id = egui::Id::unique("didcord-brand-logo-mark");
+	if let Some(texture) = ctx.data(|d| d.get_temp::<egui::TextureHandle>(id)) {
+		return texture;
+	}
+	const LOGO: &[u8] = include_bytes!("../../../packaging/linux/hicolor/256x256/apps/didcord.png");
+	let img = image::load_from_memory_with_format(LOGO, image::ImageFormat::Png)
+		.expect("bundled didcord logo")
+		.into_rgba8();
+	let size = [img.width() as usize, img.height() as usize];
+	let color_image = egui::ColorImage::from_rgba_unmultiplied(size, &img);
+	let texture = ctx.load_texture(
+		"didcord-brand-logo-mark",
+		color_image,
+		egui::TextureOptions::LINEAR,
 	);
+	ctx.data_mut(|d| d.insert_temp(id, texture.clone()));
+	texture
+}
+
+fn app_mark(ui: &mut egui::Ui, size: f32) {
+	let (mark, _) = ui.allocate_exact_size(egui::Vec2::splat(size), egui::Sense::hover());
+	let texture = didcord_logo_texture(ui.ctx());
+	egui::Image::from_texture((texture.id(), egui::Vec2::splat(size)))
+		.corner_radius((size * 0.22).round() as u8)
+		.paint_at(ui, mark);
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn didcord_logo_texture_loads_without_deadlock() {
+		let ctx = egui::Context::default();
+		let handle = didcord_logo_texture(&ctx);
+		assert_eq!(handle.name(), "didcord-brand-logo-mark");
+		let handle2 = didcord_logo_texture(&ctx);
+		assert_eq!(handle.id(), handle2.id());
+	}
 }

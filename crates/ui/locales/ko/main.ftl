@@ -1720,6 +1720,17 @@ main-sign-in-preview-sample-conversations-no-discord-connection = 예시 대화,
 main-sign-in-screen-independent-and-open-source-not-affiliated-with-discord = 독립 오픈 소스 프로젝트 · Discord와 무관합니다
 # Context: sign_in_screen
 main-sign-in-screen-didcord = Didcord
+main-sign-in-screen-early-preview = 얼리 프리뷰
+main-sign-in-button-continue-with-discord = Discord로 계속하기
+main-sign-in-button-waiting-for-discord = Discord 대기 중…
+main-sign-in-button-use-another-account = 다른 계정 사용
+main-sign-in-status-no-saved-login = 저장된 로그인이 없습니다. 저장하려면 Discord로 로그인하세요.
+main-sign-in-status-saved-login-found = 저장된 로그인을 찾았습니다. Discord에 연결하는 중입니다
+main-sign-in-status-saved-login-invalid = 저장된 로그인이 유효하지 않습니다. Discord로 다시 로그인하세요.
+main-sign-in-status-saved-login-unavailable = 저장된 로그인을 사용할 수 없습니다. Discord로 로그인하세요.
+main-sign-in-disclosure-about-1 = 메시징, 반응, 검색 및 읽음 표시는 오프라인 테스트를 거쳤습니다. 실제 Discord 상호 운용성은 아직 확인되지 않았습니다.
+main-sign-in-disclosure-about-2 = 메시지와 임시 보관함은 로컬에 캐시됩니다. 로그인 토큰은 운영 체제 자격 증명 저장소를 사용합니다.
+main-sign-in-disclosure-about-3 = 비공식 클라이언트는 Discord 계정을 위험에 빠뜨릴 수 있습니다.
 # Context: ui
 main-ui-cancel = 취소
 # Context: ui
@@ -2455,6 +2466,7 @@ search-overlays-search-for = 검색 대상
 search-pane-close = 닫기
 # Context: pane
 search-pane-hide-matching-text-highlight = 검색어 강조 표시 숨기기
+search-pane-local-cache = 로컬 캐시 검색 (FTS5 / 정규식)
 # Context: pane
 search-pane-indexing-is-incomplete-results-may-be-missing = 색인 작업이 완료되지 않아 일부 결과가 누락될 수 있습니다.
 # Context: pane
@@ -4038,6 +4050,18 @@ updates-update-settings-issue-diagnostics = 문제 진단 정보
 updates-update-settings-nightly = Nightly
 # Context: update_settings
 updates-update-settings-package-manager-updates = 패키지 관리자 업데이트
+# Context: update_settings
+updates-update-settings-checking = 업데이트 확인 중…
+# Context: update_settings
+updates-update-settings-wait-seconds = 업데이트를 다시 확인하려면 { $seconds }초 기다려 주세요.
+# Context: update_settings
+updates-update-settings-up-to-date = 이 채널의 Didcord가 최신 버전입니다.
+# Context: update_settings
+updates-update-settings-not-checked = 아직 업데이트를 확인하지 않았습니다.
+# Context: update_settings
+updates-update-settings-not-checked-channel = 이 채널에서 아직 업데이트를 확인하지 않았습니다.
+# Context: update_settings
+updates-update-settings-no-release = 이 채널에 아직 게시된 릴리스가 없습니다.
 # Context: update_settings
 updates-update-settings-preferences = 환경 설정
 # Context: update_settings

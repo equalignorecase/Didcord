@@ -1033,6 +1033,29 @@ impl MessagingUi {
 		});
 	}
 
+	/// Compact language popup for the header: list of supported UI languages.
+	pub fn language_menu(&mut self, ui: &mut egui::Ui) {
+		let colors = design::palette(ui);
+		ui.set_min_width(180.0);
+		ui.set_max_width(220.0);
+		ui.spacing_mut().item_spacing.y = 4.0;
+		ui.label(design::eyebrow(
+			ui,
+			crate::i18n::translate("language-group"),
+			colors.muted,
+		));
+		ui.add_space(2.0);
+		for candidate in crate::i18n::Language::ALL {
+			let selected = candidate == self.language;
+			let name = candidate.name(self.language);
+			if ui.selectable_label(selected, name).clicked() {
+				self.language = candidate;
+				crate::i18n::set_current(candidate);
+				crate::local_time::set_format(self.time_format, candidate);
+			}
+		}
+	}
+
 	/// Compact appearance popup for the signed-out header: mode, colour preset and zoom.
 	/// Deliberately narrower than the settings page; everything else lives in Settings.
 	pub fn appearance_menu(&mut self, ui: &mut egui::Ui) {

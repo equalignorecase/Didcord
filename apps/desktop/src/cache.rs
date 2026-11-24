@@ -102,6 +102,15 @@ pub enum Operation {
 		channel: Id,
 		ids: Vec<Id>,
 	},
+	SearchMessages {
+		channel: Id,
+		scope_channel: Option<Id>,
+		query: String,
+		regex: bool,
+		oldest: bool,
+		offset: usize,
+		request: u64,
+	},
 	ClearHistory,
 	Forget,
 }
@@ -137,6 +146,11 @@ pub enum Outcome {
 		/// The cached window reaches the channel's first message.
 		start: bool,
 		epoch: u64,
+	},
+	Search {
+		channel: Id,
+		request: u64,
+		result: std::result::Result<local_store::LocalSearchPage, StoreError>,
 	},
 	Saved,
 	HistoryCleared,
@@ -355,6 +369,12 @@ impl Cache {
 						font.bytes().len() + font.name.capacity()
 					}
 					Outcome::Channel { messages, .. } => message_bytes(messages),
+					Outcome::Search {
+						result: Ok(page), ..
+					} => {
+						page.hits.iter().map(|(_, m)| m.bytes()).sum::<usize>()
+							+ page.hits.capacity() * size_of::<(Id, Message)>()
+					}
 					Outcome::Drafts(drafts) => drafts.values().map(String::capacity).sum(),
 					Outcome::GifFavorites(favorites) => {
 						favorites.iter().map(model::Gif::bytes).sum::<usize>()
@@ -520,6 +540,39 @@ fn execute(
 				Err(error) => Err(*error),
 			});
 		}
+		Operation::SearchMessages {
+			channel,
+			scope_channel,
+			query,
+			regex,
+			oldest,
+			offset,
+			request,
+		} => {
+			let mode = if *regex {
+				local_store::LocalSearchMode::Regex
+			} else {
+				local_store::LocalSearchMode::FullText
+			};
+			return Outcome::Search {
+				channel: *channel,
+				request: *request,
+				result: match store {
+					Ok(store) => store.search_messages(
+						account,
+						local_store::LocalSearchRequest {
+							channel: *scope_channel,
+							query,
+							mode,
+							oldest: *oldest,
+							offset: *offset,
+							limit: model::SEARCH_PAGE_SIZE,
+						},
+					),
+					Err(error) => Err(*error),
+				},
+			};
+		}
 		_ => {}
 	}
 	if matches!(
@@ -578,7 +631,8 @@ fn execute(
 		| Operation::LoadMinimizeToTray
 		| Operation::SaveMinimizeToTray(_)
 		| Operation::LoadAccountPresences
-		| Operation::SaveAccountPresence(_) => unreachable!(),
+		| Operation::SaveAccountPresence(_)
+		| Operation::SearchMessages { .. } => unreachable!(),
 	};
 	let result = match store {
 		Ok(store) => match operation {
@@ -597,7 +651,8 @@ fn execute(
 			| Operation::LoadMinimizeToTray
 			| Operation::SaveMinimizeToTray(_)
 			| Operation::LoadAccountPresences
-			| Operation::SaveAccountPresence(_) => {
+			| Operation::SaveAccountPresence(_)
+			| Operation::SearchMessages { .. } => {
 				unreachable!()
 			}
 			Operation::LoadAppearance => store

@@ -196,8 +196,17 @@ pub enum Command {
 		guild: Option<Id>,
 		query: String,
 		before: Option<Id>,
-		offset: u32,
 		/// Oldest messages first; page one then starts at the earliest match.
+		offset: u32,
+		oldest: bool,
+		request: u64,
+	},
+	LocalSearch {
+		channel: Id,
+		guild: Option<Id>,
+		query: String,
+		regex: bool,
+		offset: u32,
 		oldest: bool,
 		request: u64,
 	},
@@ -892,6 +901,8 @@ pub struct State {
 	pub slowmode_cooldowns: slowmode::Cooldowns,
 	/// Search results run oldest first, sorted by Discord rather than per page.
 	pub search_oldest: bool,
+	/// `Some(regex)` when the active search targets the local SQLite FTS5/regex index.
+	pub search_local: Option<bool>,
 	pub send_verification: verification::SendVerification,
 	pub reply: Option<Reply>,
 	/// Reply targets of conversations left before sending; at most 64, session RAM only.
@@ -1113,6 +1124,7 @@ impl Default for State {
 			send_throttle_seen: false,
 			slowmode_cooldowns: Default::default(),
 			search_oldest: false,
+			search_local: None,
 			send_verification: Default::default(),
 			reply: None,
 			parked_replies: ParkedReplies::default(),
@@ -2376,6 +2388,9 @@ impl State {
 			return;
 		}
 		if let Command::Search {
+			channel, request, ..
+		}
+		| Command::LocalSearch {
 			channel, request, ..
 		}
 		| Command::Pins {
@@ -4245,7 +4260,12 @@ impl State {
 			self.prune_resident();
 			self.prune_post_summaries();
 		}
-		if self.search.is_some() && !self.can_search() {
+		if self.search.is_some()
+			&& if self.search_local.is_some() {
+				!self.can_search_local()
+			} else {
+				!self.can_search()
+			} {
 			self.clear_search();
 		}
 		if self

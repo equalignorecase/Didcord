@@ -1,0 +1,268 @@
+name: Preview release
+run-name: Preview release from CI run ${{ inputs.source_run || github.event.workflow_run.id || 'latest' }}
+
+on:
+  workflow_run:
+    workflows: [native-client]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      source_run:
+        description: Push-to-main native-client run ID (leave blank for latest with passing native builds)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: preview-release-${{ inputs.source_run || github.event.workflow_run.id || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  source:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.source.outputs.ready }}
+      run_id: ${{ steps.source.outputs.run_id }}
+      sha: ${{ steps.source.outputs.sha }}
+      version: ${{ steps.source.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Resolve verified main CI payloads
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_RUN: ${{ inputs.source_run }}
+          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re, subprocess, sys, tomllib
+
+          repo = os.environ['GH_REPO']
+          event_name = os.environ['EVENT_NAME']
+          input_run = os.environ.get('INPUT_RUN', '').strip()
+          workflow_run_id = os.environ.get('WORKFLOW_RUN_ID', '').strip()
+          required_jobs = {
+              'native (macos-latest)',
+              'native (windows-latest)',
+              'native (windows-11-arm)',
+          }
+
+          def gh_json(endpoint):
+              out = subprocess.check_output(['gh', 'api', endpoint], text=True)
+              return json.loads(out)
+
+          def valid_run(run):
+              return (
+                  run.get('status') == 'completed'
+                  and run.get('event') == 'push'
+                  and run.get('head_branch') == 'main'
+                  and run.get('path') == '.github/workflows/ci.yml'
+                  and (run.get('head_repository') or {}).get('full_name') == repo
+              )
+
+          def native_jobs_ok(run_id):
+              jobs = gh_json(f'repos/{repo}/actions/runs/{run_id}/jobs?per_page=100').get('jobs', [])
+              by_name = {j.get('name'): j for j in jobs}
+              return all(
+                  name in by_name
+                  and by_name[name].get('status') == 'completed'
+                  and by_name[name].get('conclusion') == 'success'
+                  for name in required_jobs
+              )
+
+          def write_output(ready, run_id='', sha='', version=''):
+              with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+                  output.write(f'ready={ready}\n')
+                  output.write(f'run_id={run_id}\n')
+                  output.write(f'sha={sha}\n')
+                  output.write(f'version={version}\n')
+
+          candidate_id = input_run or workflow_run_id
+          selected = None
+          if candidate_id:
+              if not re.fullmatch(r'[0-9]+', candidate_id):
+                  raise SystemExit(f'Invalid source_run id: {candidate_id!r}')
+              run = gh_json(f'repos/{repo}/actions/runs/{candidate_id}')
+              if valid_run(run) and native_jobs_ok(candidate_id):
+                  selected = run
+              elif event_name == 'workflow_run':
+                  print(f'Skipping run {candidate_id}: native build jobs did not all succeed.')
+                  write_output('false')
+                  sys.exit(0)
+              else:
+                  raise SystemExit(
+                      f'Run {candidate_id} is not a completed push-to-main ci.yml run with passing macOS/Windows native jobs.'
+                  )
+          else:
+              runs = gh_json(
+                  f'repos/{repo}/actions/workflows/ci.yml/runs?branch=main&event=push&status=completed&per_page=20'
+              ).get('workflow_runs', [])
+              for run in runs:
+                  if valid_run(run) and native_jobs_ok(str(run['id'])):
+                      selected = run
+                      break
+              if selected is None:
+                  raise SystemExit('No completed push-to-main ci.yml run with passing macOS/Windows native jobs was found.')
+
+          run_id = str(selected['id'])
+          sha = selected['head_sha']
+          subprocess.check_call(['git', 'fetch', '--no-tags', 'origin', sha])
+          cargo_toml = subprocess.check_output(['git', 'show', f'{sha}:Cargo.toml'], text=True)
+          version = tomllib.loads(cargo_toml)['workspace']['package']['version']
+          if not re.fullmatch(r'[0-9A-Za-z.+-]+', version):
+              raise SystemExit(f'Unexpected workspace version: {version!r}')
+          write_output('true', run_id, sha, version)
+          PY
+
+  macos:
+    needs: source
+    if: needs.source.outputs.ready == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: didcord-macOS-ARM64-unsigned
+          run-id: ${{ needs.source.outputs.run_id }}
+          github-token: ${{ github.token }}
+          path: payload
+      - name: Verify bundle and create preview archive
+        env:
+          VERSION: ${{ needs.source.outputs.version }}
+        run: |
+          app="payload/Didcord.app"
+          bin="$app/Contents/MacOS/didcord"
+          test -d "$app"
+          test -f "$bin"
+          chmod +x "$bin"
+          file "$bin" | grep -q "arm64"
+          plist_version=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$app/Contents/Info.plist")
+          test "$plist_version" = "${VERSION%%-*}"
+          codesign --force --sign - "$app"
+          codesign --verify --strict "$app"
+          mkdir -p output
+          ditto -c -k --sequesterRsrc payload "output/didcord-${VERSION}-macOS-ARM64-Preview.zip"
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: preview-macOS-ARM64
+          path: output/*.zip
+          if-no-files-found: error
+
+  windows:
+    needs: source
+    if: needs.source.outputs.ready == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            arch: X64
+            machine: '0x8664'
+          - os: windows-11-arm
+            arch: ARM64
+            machine: '0xaa64'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ needs.source.outputs.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.99.1
+      - name: Install NSIS
+        run: choco install nsis --no-progress -y
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: didcord-Windows-${{ matrix.arch }}-unsigned
+          run-id: ${{ needs.source.outputs.run_id }}
+          github-token: ${{ github.token }}
+          path: payload
+      - name: Verify payload architecture and version
+        shell: bash
+        env:
+          MACHINE: ${{ matrix.machine }}
+          VERSION: ${{ needs.source.outputs.version }}
+        run: |
+          python - <<'PY'
+          import os, pathlib, struct
+          data = pathlib.Path('payload/didcord.exe').read_bytes()
+          assert data[:2] == b'MZ'
+          offset = struct.unpack_from('<I', data, 0x3c)[0]
+          assert data[offset:offset+4] == b'PE\0\0'
+          assert struct.unpack_from('<H', data, offset+4)[0] == int(os.environ['MACHINE'], 16)
+          PY
+      - name: Exercise installer safety, upgrade and removal
+        run: python packaging/windows/test_installer.py
+      - name: Build installer and test actual release payload
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.source.outputs.version }}
+        run: |
+          New-Item -ItemType Directory -Force output | Out-Null
+          & 'C:\Program Files (x86)\NSIS\makensis.exe' -V2 -NOCD "-DVERSION=$env:VERSION" "-DDIST_DIR=$pwd\payload" "-DOUTPUT_DIR=$pwd\output" packaging/windows/installer.nsi
+          if ($LASTEXITCODE -ne 0) { throw 'NSIS compilation failed' }
+          python packaging/windows/test_release_installer.py "output/didcord-$env:VERSION-setup.exe" payload "$env:VERSION"
+          if ($LASTEXITCODE -ne 0) { throw 'Release installer validation failed' }
+          Move-Item "output/didcord-$env:VERSION-setup.exe" "output/didcord-$env:VERSION-Windows-${{ matrix.arch }}-Setup.exe"
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: preview-Windows-${{ matrix.arch }}
+          path: output/*.exe
+          if-no-files-found: error
+
+  publish:
+    needs: [source, macos, windows]
+    if: needs.source.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: preview-*
+          merge-multiple: true
+          path: release-assets
+      - name: Publish unsigned macOS and Windows preview release
+        working-directory: release-assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SOURCE_SHA: ${{ needs.source.outputs.sha }}
+          SOURCE_RUN: ${{ needs.source.outputs.run_id }}
+          VERSION: ${{ needs.source.outputs.version }}
+        run: |
+          test "$(find . -maxdepth 1 -name '*-Setup.exe' | wc -l)" -eq 2
+          test "$(find . -maxdepth 1 -name '*-macOS-ARM64-Preview.zip' | wc -l)" -eq 1
+          sha256sum ./*.exe ./*.zip > SHA256SUMS.txt
+          tag="v${VERSION}-preview.${SOURCE_RUN}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Preview release $tag already exists."
+            exit 0
+          fi
+          cat > release-notes.md <<EOF
+          Preview build for Didcord ${VERSION} (macOS ARM64 + Windows X64/ARM64).
+
+          - macOS ARM64: \`didcord-${VERSION}-macOS-ARM64-Preview.zip\` (ad-hoc signed, not notarized; right-click > Open on first launch if Gatekeeper warns)
+          - Windows X64 / ARM64: NSIS installers verified offline (unsigned; Windows SmartScreen may warn)
+
+          Source commit: ${SOURCE_SHA}
+          Preview workflow commit: ${GITHUB_SHA}
+          CI payloads: https://github.com/${GH_REPO}/actions/runs/${SOURCE_RUN}
+          Packaging run: https://github.com/${GH_REPO}/actions/runs/${GITHUB_RUN_ID}
+
+          No Apple Developer secrets or Homebrew tap credentials are required for this preview release.
+          EOF
+          gh release create "$tag" ./*.exe ./*.zip SHA256SUMS.txt --target "$SOURCE_SHA" --prerelease --title "Didcord ${VERSION} Preview" --notes-file release-notes.md

@@ -296,8 +296,8 @@ impl MessagingUi {
 	/// Update controls for the signed-out header, rendered inside its menu popup so the
 	/// screen never grows a second, movable window.
 	pub fn updates_menu(&mut self, ui: &mut egui::Ui, demo: bool) {
-		ui.set_min_width(340.0);
-		ui.set_max_width(340.0);
+		ui.set_min_width(400.0);
+		ui.set_max_width(400.0);
 		self.update_settings(ui, demo);
 	}
 
@@ -370,21 +370,32 @@ impl MessagingUi {
 						ui.add(egui::Spinner::new().size(16.0));
 					}
 					// Reserve the action's width before laying out the status beside it.
-					ui.vertical(|ui| {
-						ui.spacing_mut().item_spacing.y = 2.0;
-						ui.label(
-							design::semibold(ui, format!("Didcord {}", self.build.version), 17.0)
-								.color(colors.text_strong),
-						);
-						ui.add(
-							egui::Label::new(
-								egui::RichText::new(&self.updates.status)
-									.size(13.0)
-									.color(colors.muted),
-							)
-							.truncate(),
-						);
-					});
+					ui.allocate_ui_with_layout(
+						egui::vec2(ui.available_width(), 0.0),
+						egui::Layout::top_down(egui::Align::LEFT),
+						|ui| {
+							ui.spacing_mut().item_spacing.y = 2.0;
+							ui.add(
+								egui::Label::new(
+									design::semibold(
+										ui,
+										format!("Didcord {}", self.build.version),
+										17.0,
+									)
+									.color(colors.text_strong),
+								)
+								.wrap(),
+							);
+							ui.add(
+								egui::Label::new(
+									egui::RichText::new(&self.updates.status)
+										.size(13.0)
+										.color(colors.muted),
+								)
+								.wrap(),
+							);
+						},
+					);
 				});
 			});
 			if let Some(progress) = self.updates.progress {

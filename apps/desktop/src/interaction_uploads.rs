@@ -97,6 +97,7 @@ impl Desktop {
 		if let Err(error) = uploads.start_choose(
 			generation,
 			channel,
+			self.state.upload_limit(),
 			self.runtime.handle(),
 			ctx,
 			self.window.clone(),
