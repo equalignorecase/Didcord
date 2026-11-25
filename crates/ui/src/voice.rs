@@ -4137,6 +4137,8 @@ impl MessagingUi {
 		let connected = matches!(phase, Phase::Connected | Phase::Waiting);
 		let error = call.error;
 		let reconnecting = call.reconnecting;
+		let local_muted = call.muted || call.deafened;
+		let server_muted = call.server_muted || call.server_deafened;
 		let reconnecting_title =
 			reconnecting.map(|_| crate::i18n::translate("voice-voice-card-section-reconnecting"));
 		let channel = state
@@ -4179,13 +4181,28 @@ impl MessagingUi {
 			.show(ui, |ui| {
 				ui.set_width(ui.available_width());
 				ui.spacing_mut().item_spacing.y = 8.0;
-				if self.voice_microphone_unavailable {
+				let microphone_status = if !connected {
+					None
+				} else if server_muted || !state.can_speak(channel_id) {
+					Some("voice-call-microphone-channel-permission")
+				} else if local_muted || self.voice_ptm_active {
+					Some("voice-call-microphone-muted")
+				} else if self.voice_microphone_unavailable {
+					Some("voice-voice-card-section-microphone-unavailable-a-still-connected-choose-another-input-in-audio")
+				} else if self.voice_push_to_talk && !self.voice_ptt_active {
+					Some("voice-call-microphone-push-to-talk")
+				} else if !self.voice_push_to_talk
+					&& state.permission(channel_id, model::permissions::USE_VAD) != Some(true)
+				{
+					Some("voice-call-microphone-requires-push-to-talk")
+				} else {
+					None
+				};
+				if let Some(status) = microphone_status {
 					ui.label(
-						RichText::new(crate::i18n::translate(
-							"voice-voice-card-section-microphone-unavailable-a-still-connected-choose-another-input-in-audio",
-						))
-						.size(12.0)
-						.color(colors.warning),
+						RichText::new(crate::i18n::translate(status))
+							.size(12.0)
+							.color(colors.warning),
 					);
 				}
 				ui.horizontal(|ui| {

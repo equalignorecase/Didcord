@@ -1,5 +1,36 @@
 # Performance findings
 
+## Daily chat and Voice reliability — November 25, 2026
+
+Compared `2f31f6b` and `53ce7c0` using locked debug builds with `--features demo`.
+Both ran the same idle `--demo --demo-voice` scene at 1120×760 logical pixels on
+macOS 27.2.1 arm64, Apple M1 / 8 GiB, Retina 2× and Metal. Each run sampled its
+main process with `ps -axo pid,pcpu,rss,etime,comm` five times at roughly one-second
+intervals, starting at 24 seconds of process age.
+
+| Metric | Base | Changed | Delta |
+| --- | ---: | ---: | ---: |
+| Median sampled RSS | 58,736 KiB | 56,064 KiB | −2,672 KiB |
+| Maximum sampled RSS | 67,376 KiB | 58,672 KiB | −8,704 KiB |
+| Median sampled CPU | 0.5% | 1.0% | +0.5 percentage points |
+
+Each revision had one run while the release build was active on the same host.
+The measurements describe a short idle sample. They do not establish a CPU or
+memory regression or improvement. The demo used synthetic participants and did
+not exercise live audio, Thai search latency, or helper and GPU allocations.
+
+On the same host, standard ad-hoc signed `cargo xtask package` builds of the
+same revisions produced the following sizes. The app bundle size sums regular
+file lengths. The ZIP uses `ditto -c -k --keepParent`.
+
+| Release size | Base | Changed | Delta |
+| --- | ---: | ---: | ---: |
+| Executable | 77,811,424 B | 77,827,856 B | +16,432 B |
+| App bundle | 83,449,191 B | 83,465,623 B | +16,432 B |
+| ZIP | 52,375,646 B | 52,378,631 B | +2,985 B |
+
+The changed measurement precedes the Korean translation follow-up.
+
 ## Mascot asset refresh — November 19, 2026
 
 Compared with `d812cfe`, the decoded 512×896 icon atlas changes only cell 58; its other

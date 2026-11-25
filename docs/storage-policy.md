@@ -1,5 +1,16 @@
 # Local storage policy and audit
 
+## Drafts and Thai local search
+
+On normal exit the desktop client gives the local storage worker up to 500 ms to finish
+accepted operations, including per-account drafts. Abrupt termination can still lose
+pending writes.
+
+Local queries containing Thai characters use substring matching across retained messages
+in the selected account and channel scope. This finds terms inside unspaced text even
+when the FTS index also has a prefix hit. Search results retain their existing page and
+byte limits.
+
 ## Discord device state (November 13, 2026)
 
 REST now keeps the cookies Discord sets, as a browser profile does, so each launch is the same

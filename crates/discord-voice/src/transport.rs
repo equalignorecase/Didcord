@@ -565,14 +565,22 @@ async fn run_inner(
 				.max_frame_size(Some(MAX_SIGNAL))
 				.write_buffer_size(0)
 				.max_write_buffer_size(MAX_SIGNAL * 2);
-			let replacement = timeout(
+			ws = match timeout(
 				Duration::from_secs(15),
 				client_core::fingerprint::websocket(&url, config),
 			)
 			.await
-			.map_err(|_| "Voice resume timed out; rejoin the call")?
-			.map_err(|_| "Voice resume failed; rejoin the call")?;
-			ws = replacement;
+			{
+				Ok(Ok(replacement)) => replacement,
+				result => {
+					reconnect = Some(if result.is_err() {
+						"Voice resume timed out; rejoin the call"
+					} else {
+						"Voice resume failed; rejoin the call"
+					});
+					continue;
+				}
+			};
 			json_send(&mut ws,json!({"op":7,"d":{"server_id":credentials.guild.unwrap_or(credentials.channel).to_string(),"session_id":credentials.session.expose(),"token":credentials.token.expose(),"seq_ack":seq_ack}})).await?;
 		}
 		tokio::select! {
@@ -3178,6 +3186,11 @@ mod tests {
 				.unwrap();
 			}
 			drop(ws);
+			if guild {
+				// The first transport reconnect dies before the WebSocket upgrade.
+				let (tcp, _) = listener.accept().await.unwrap();
+				drop(tcp);
+			}
 			let (tcp, _) = listener.accept().await.unwrap();
 			let mut ws = tokio_tungstenite::accept_async(tcp).await.unwrap();
 			let resume: Value =

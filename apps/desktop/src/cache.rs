@@ -249,6 +249,22 @@ impl Cache {
 			true
 		}
 	}
+	/// Close submissions and drain results so the worker can finish accepted writes.
+	pub fn finish(self, timeout: std::time::Duration) -> bool {
+		let deadline = std::time::Instant::now() + timeout;
+		drop(self.send);
+		loop {
+			match self
+				.receive
+				.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
+			{
+				Ok(_) => {}
+				Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return true,
+				Err(std::sync::mpsc::RecvTimeoutError::Timeout) => return false,
+			}
+		}
+	}
+
 	pub fn queue(&self, generation: u64, account: Id, operation: Operation) -> bool {
 		if matches!(&operation, Operation::SaveChannelPreferences(value) if !value.is_valid()) {
 			return false;
@@ -1278,6 +1294,34 @@ mod tests {
 				.len(),
 			2
 		);
+	}
+
+	#[test]
+	fn exiting_drains_an_accepted_draft_before_reopen() {
+		let path =
+			std::env::temp_dir().join(format!("didcord-exit-draft-{}.sqlite", std::process::id()));
+		let account = Id(1);
+		let channel = Id(2);
+		let cache = Cache::start(
+			egui::Context::default(),
+			Some(LocalStore::open(&path).unwrap()),
+		);
+		assert!(cache.queue(
+			0,
+			account,
+			Operation::SaveDraft {
+				channel,
+				content: "unfinished message".into(),
+			},
+		));
+		assert!(cache.finish(std::time::Duration::from_secs(5)));
+		let store = LocalStore::open(&path).unwrap();
+		assert_eq!(
+			store.load_drafts(account).unwrap()[&channel],
+			"unfinished message"
+		);
+		drop(store);
+		std::fs::remove_file(path).unwrap();
 	}
 
 	#[test]

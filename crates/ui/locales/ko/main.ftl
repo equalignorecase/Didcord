@@ -4289,6 +4289,10 @@ voice-voice-card-section-dismiss-call = 통화 닫기
 # Context: voice_card_section
 voice-voice-card-section-reconnect-attempt = { $reason } · { $total }회 중 { $attempt }회 시도
 # Context: voice_card_section
+voice-call-microphone-channel-permission = 채널 권한 또는 서버 음소거로 마이크를 사용할 수 없습니다.
+voice-call-microphone-muted = 마이크가 음소거되었습니다.
+voice-call-microphone-push-to-talk = 말하려면 눌러서 말하기 키를 누르고 계세요.
+voice-call-microphone-requires-push-to-talk = 이 채널에서 말하려면 눌러서 말하기를 켜세요.
 voice-voice-card-section-reconnecting = 다시 연결 중…
 
 voice-connection-title = 연결
