@@ -2294,6 +2294,7 @@ voice-voice-participant-menu-silence-this-person-on-this-device-only-nobody-else
 voice-voice-participant-menu-unmute = เปิดเสียง
 voice-voice-participant-menu-user-volume = ความดังเสียงผู้ใช้
 voice-voice-participant-microphone-muted = ปิดไมค์อยู่
+voice-voice-participant-camera-on = เปิดกล้องอยู่
 voice-voice-participant-muted-by-server = ถูกเซิร์ฟเวอร์ปิดไมค์
 voice-voice-participant-muted-for-you-on-this-device = ปิดเสียงสำหรับคุณบนอุปกรณ์นี้
 voice-voice-popup-content-install-a-voice-enabled-build-to-use-these-controls = ติดตั้งบิลด์ที่รองรับเสียงเพื่อใช้ปุ่มควบคุมเหล่านี้

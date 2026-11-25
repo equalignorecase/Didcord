@@ -4331,6 +4331,7 @@ voice-voice-participant-menu-unmute = 음소거 해제
 voice-voice-participant-menu-user-volume = 사용자 음량
 # Context: voice_participant
 voice-voice-participant-microphone-muted = 마이크 음소거됨
+voice-voice-participant-camera-on = 카메라 켜짐
 # Context: voice_participant
 voice-voice-participant-muted-by-server = 서버에서 음소거됨
 # Context: voice_participant
