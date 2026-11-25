@@ -39,6 +39,12 @@ jobs:
         with:
           cache-on-failure: true
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Windows installer regression (offline)
+        if: runner.os == 'Windows' && github.event_name == 'pull_request'
+        run: |
+          choco install nsis --no-progress -y
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python packaging/windows/test_installer.py
       - name: Check production build without development fixtures
         run: cargo check --locked -p didcord --bin didcord --no-default-features
       - name: Check offline demo targets
@@ -57,12 +63,6 @@ jobs:
           - name: Linux package regression
             if: runner.os == 'Linux'
             run: PYTHONDONTWRITEBYTECODE=1 python3 packaging/linux/test_package.py
-      - name: Windows installer regression (offline)
-        if: runner.os == 'Windows' && github.event_name == 'pull_request'
-        run: |
-          choco install nsis --no-progress -y
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python packaging/windows/test_installer.py
       # Release builds run on main and on manual dispatch; pull requests stop at the checks above.
       - if: github.event_name != 'pull_request'
         run: cargo replay
