@@ -699,6 +699,14 @@ impl MessagingUi {
 							"voice-voice-participant-muted-for-you-on-this-device",
 						);
 					}
+					if shown.video {
+						status_icon(
+							ui,
+							crate::icons::Icon::Video,
+							colors.muted,
+							"voice-voice-participant-camera-on",
+						);
+					}
 					if entry.participant.streaming {
 						live_badge(ui);
 					}
@@ -4973,7 +4981,7 @@ fn stage_participants(state: &State, channel: Id) -> Vec<RosterEntry> {
 }
 
 /// The local participant follows this device's toggles at once instead of waiting for the
-/// gateway echo, so a deafen shows the deafened glyph immediately (and in the offline preview).
+/// gateway echo, including for mute, deafen and camera status.
 fn shown_participant(state: &State, entry: &RosterEntry) -> Participant {
 	let mut participant = entry.participant;
 	if let Some(call) = state
@@ -4988,6 +4996,7 @@ fn shown_participant(state: &State, entry: &RosterEntry) -> Participant {
 	{
 		participant.deafened = call.deafened;
 		participant.muted = call.self_muted();
+		participant.video = call.camera;
 		participant.server_muted |= call.server_muted;
 		participant.server_deafened |= call.server_deafened;
 	}
@@ -5233,6 +5242,27 @@ fn user_limit_pill(ui: &egui::Ui, right: egui::Pos2, people: usize, limit: u16) 
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	#[test]
+	fn roster_camera_follows_local_toggle_before_the_gateway_echo() {
+		let mut state = test_support::call_demo_state();
+		let call = state.voice.active.as_mut().unwrap();
+		call.camera = true;
+		let mut entry = RosterEntry {
+			guild: Id(10),
+			channel: call.channel,
+			participant: call.participants[0],
+			member: None,
+		};
+		assert!(shown_participant(&state, &entry).video);
+
+		state.voice.active.as_mut().unwrap().camera = false;
+		entry.participant.video = true;
+		assert!(!shown_participant(&state, &entry).video);
+
+		entry.participant.user = Id(2);
+		assert!(shown_participant(&state, &entry).video);
+	}
 
 	#[test]
 	fn profile_join_opens_its_channel_only_once_a_switch_starts_the_join() {

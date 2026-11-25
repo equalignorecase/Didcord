@@ -4380,6 +4380,7 @@ voice-voice-participant-menu-unmute = Unmute
 voice-voice-participant-menu-user-volume = User volume
 # Context: voice_participant
 voice-voice-participant-microphone-muted = Microphone muted
+voice-voice-participant-camera-on = Camera on
 # Context: voice_participant
 voice-voice-participant-muted-by-server = Muted by server
 # Context: voice_participant
