@@ -1,4 +1,4 @@
-; Didcord Windows Installer Script (NSIS Modern UI 2)
+; Didcord Windows Installer Script
 ; Installs per-user to $LOCALAPPDATA\Programs\Didcord without elevation
 ; Preserves write permissions for seamless in-app autoupdates
 
@@ -9,6 +9,7 @@ SetCompressor /SOLID lzma
 !include "MUI2.nsh"
 !include "FileFunc.nsh"
 !include "LogicLib.nsh"
+!include "nsDialogs.nsh"
 !include "x64.nsh"
 !include "Win\COM.nsh"
 !include "Win\Propkey.nsh"
@@ -60,15 +61,15 @@ InstallDirRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRO
 
 !define MUI_ABORTWARNING
 
-; UI Pages
-!insertmacro MUI_PAGE_WELCOME
-!insertmacro MUI_PAGE_LICENSE "${DIST_DIR}\LICENSE-MIT"
+Var ShowInstallOptions
+Var SetupIcon
+
+; Setup pages use the same window and native keyboard navigation.
+Page custom ShowSetup
+!define MUI_PAGE_CUSTOMFUNCTION_PRE SkipInstallDirectory
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
-
-!define MUI_FINISHPAGE_RUN "$INSTDIR\${APP_EXE}"
-!define MUI_FINISHPAGE_RUN_TEXT "Launch ${PRODUCT_NAME}"
-!insertmacro MUI_PAGE_FINISH
+Page custom ShowSetupComplete
 
 ; Uninstaller UI Pages
 !insertmacro MUI_UNPAGE_CONFIRM
@@ -76,6 +77,97 @@ InstallDirRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRO
 !insertmacro MUI_UNPAGE_FINISH
 
 !insertmacro MUI_LANGUAGE "English"
+
+Function ShowSetup
+  StrCpy $ShowInstallOptions 0
+  nsDialogs::Create 1018
+  Pop $0
+  ${If} $0 == error
+    SetErrorLevel 2
+    Quit
+  ${EndIf}
+
+  !insertmacro MUI_HEADER_TEXT "Install ${PRODUCT_NAME}" "Version ${VERSION}"
+
+  ${NSD_CreateIcon} 8u 16u 32u 32u ""
+  Pop $0
+  ${NSD_SetIconFromInstaller} $0 $SetupIcon
+  ${NSD_CreateLabel} 49u 19u -57u 20u "${PRODUCT_NAME} will be installed for your Windows account."
+  Pop $0
+  ${NSD_CreateLink} 49u 49u -57u 13u "View license"
+  Pop $0
+  ${NSD_OnClick} $0 OpenSetupLicense
+  ${NSD_CreateButton} 49u 76u 68u 17u "&Options..."
+  Pop $0
+  ${NSD_OnClick} $0 OpenInstallOptions
+
+  GetDlgItem $0 $HWNDPARENT 1
+  ${NSD_SetText} $0 "&Install"
+  System::Call 'user32::SetFocus(p r0)'
+  nsDialogs::Show
+  ${NSD_FreeIcon} $SetupIcon
+FunctionEnd
+
+Function OpenSetupLicense
+  Pop $0
+  InitPluginsDir
+  ${IfNot} ${FileExists} "$PLUGINSDIR\Didcord-license.txt"
+    File /oname=$PLUGINSDIR\Didcord-license.txt "${DIST_DIR}\LICENSE-MIT"
+  ${EndIf}
+  ClearErrors
+  ExecShell "open" "$PLUGINSDIR\Didcord-license.txt"
+  ${If} ${Errors}
+    MessageBox MB_OK|MB_ICONEXCLAMATION "Windows could not open the license."
+  ${EndIf}
+FunctionEnd
+
+Function OpenInstallOptions
+  Pop $0
+  StrCpy $ShowInstallOptions 1
+  SendMessage $HWNDPARENT ${WM_COMMAND} 1 0
+FunctionEnd
+
+Function SkipInstallDirectory
+  ${If} $ShowInstallOptions == 0
+    Abort
+  ${EndIf}
+FunctionEnd
+
+Function ShowSetupComplete
+  IfAbort failed
+  nsDialogs::Create 1018
+  Pop $0
+  ${If} $0 == error
+    Abort
+  ${EndIf}
+
+  !insertmacro MUI_HEADER_TEXT "${PRODUCT_NAME} is ready" "Installation complete"
+  ${NSD_CreateLabel} 8u 19u -16u 20u "You can also open ${PRODUCT_NAME} from the Start menu."
+  Pop $0
+  ${NSD_CreateButton} 8u 48u 92u 18u "&Open ${PRODUCT_NAME}"
+  Pop $0
+  ${NSD_OnClick} $0 LaunchDidcord
+  System::Call 'user32::SetFocus(p r0)'
+  GetDlgItem $0 $HWNDPARENT 1
+  ${NSD_SetText} $0 "&Close"
+  nsDialogs::Show
+  Return
+
+  failed:
+    Abort
+FunctionEnd
+
+Function LaunchDidcord
+  Pop $0
+  SetOutPath "$INSTDIR"
+  ClearErrors
+  Exec '"$INSTDIR\${APP_EXE}"'
+  ${If} ${Errors}
+    MessageBox MB_OK|MB_ICONEXCLAMATION "Windows could not open ${PRODUCT_NAME}. Try opening it from the Start menu."
+  ${Else}
+    SendMessage $HWNDPARENT ${WM_COMMAND} 1 0
+  ${EndIf}
+FunctionEnd
 
 ; The installer uses the x86 NSIS stub, including on x64 and ARM64 Windows.
 !if ${NSIS_PTR_SIZE} != 4
