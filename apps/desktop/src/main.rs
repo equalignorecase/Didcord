@@ -6059,6 +6059,15 @@ impl eframe::App for Desktop {
 			diagnostics::Level::Info,
 			"exiting",
 		);
+		if let Some(cache) = self.cache.take()
+			&& !cache.finish(std::time::Duration::from_millis(500))
+		{
+			diagnostics::record(
+				diagnostics::Category::App,
+				diagnostics::Level::Warn,
+				"Local storage did not finish before exit",
+			);
+		}
 		diagnostics::flush(std::time::Duration::from_millis(500));
 		// Later launches start a new client instead of waking this one while it shuts down.
 		self.instance.release();

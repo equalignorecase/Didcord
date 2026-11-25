@@ -9475,6 +9475,10 @@ mod tests {
 			assert!(view.reflow_frames > reflows);
 			assert!(!view.following && !view.jump);
 			assert_eq!(view.anchor, Some(anchor));
+			// Apply the newly measured height and verify the displayed reading cursor
+			// survives the following layout pass, not just the measurement pass.
+			render(&mut view, &mut state);
+			assert_eq!(view.anchor, Some(anchor));
 			crate::MessagingUi::default().apply_reading_preferences(
 				&ctx,
 				model::ReadingPreferences {

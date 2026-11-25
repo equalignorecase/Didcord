@@ -4338,6 +4338,10 @@ voice-voice-card-section-dismiss-call = Dismiss call
 # Context: voice_card_section
 voice-voice-card-section-reconnect-attempt = { $reason } · attempt { $attempt } of { $total }
 # Context: voice_card_section
+voice-call-microphone-channel-permission = Microphone blocked by channel permissions or server mute.
+voice-call-microphone-muted = Microphone muted.
+voice-call-microphone-push-to-talk = Hold your Push to Talk key to speak.
+voice-call-microphone-requires-push-to-talk = Enable Push to Talk to speak in this channel.
 voice-voice-card-section-reconnecting = Reconnecting…
 
 voice-connection-title = Connection

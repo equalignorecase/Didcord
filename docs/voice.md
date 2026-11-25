@@ -236,7 +236,8 @@ This addresses a device-restart path consistent with issue #569's repeated audio
 resets; the reporter's Linux/PipeWire call still requires a live retest.
 
 A voice-server crash (WebSocket close 4015) uses the existing two-attempt resume budget,
-retaining the UDP connection, acknowledged signaling cursor and encrypted group. Terminal
+retaining the UDP connection, acknowledged signaling cursor and encrypted group. A failed
+WebSocket opening handshake consumes one attempt. Terminal
 closes, including 4014, still require an explicit new call. Bounded proposals arriving before
 DAVE has a local group are ignored as required by its initial-group procedure; established
 groups retain strict proposal validation and no early proposal enables audio.

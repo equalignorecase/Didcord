@@ -1566,45 +1566,50 @@ impl LocalStore {
 		let order = if oldest { "ASC" } else { "DESC" };
 		match mode {
 			LocalSearchMode::FullText => {
-				let mut fts_terms = Vec::new();
-				for word in query.split_whitespace() {
-					let cleaned: String = word.chars().filter(|c| *c != '"').collect();
-					if !cleaned.is_empty() {
-						fts_terms.push(format!("\"{cleaned}\"*"));
+				if !query
+					.chars()
+					.any(|c| ('\u{0e00}'..='\u{0e7f}').contains(&c))
+				{
+					let mut fts_terms = Vec::new();
+					for word in query.split_whitespace() {
+						let cleaned: String = word.chars().filter(|c| *c != '"').collect();
+						if !cleaned.is_empty() {
+							fts_terms.push(format!("\"{cleaned}\"*"));
+						}
+					}
+					if fts_terms.is_empty() {
+						return Ok(LocalSearchPage::default());
+					}
+					let fts_expr = fts_terms.join(" ");
+					let count_sql = "SELECT count(*) FROM messages_fts WHERE account=?1 AND messages_fts MATCH ?2 AND (?3 IS NULL OR channel=?3)";
+					let total: i64 = self.0.query_row(
+						count_sql,
+						params![account_str, &fts_expr, channel_str],
+						|r| r.get(0),
+					)?;
+					if total > 0 {
+						let select_sql = format!(
+							"SELECT {MESSAGE_COLUMNS_M}, m.channel FROM messages_fts \
+							 JOIN messages m ON m.account=messages_fts.account AND m.channel=messages_fts.channel AND m.id=messages_fts.id \
+							 WHERE messages_fts.account=?1 AND messages_fts MATCH ?2 AND (?3 IS NULL OR messages_fts.channel=?3) \
+							 ORDER BY length(m.id) {order}, m.id {order} LIMIT ?4 OFFSET ?5"
+						);
+						let mut stmt = self.0.prepare(&select_sql)?;
+						let mut rows = stmt.query(params![
+							account_str,
+							&fts_expr,
+							channel_str,
+							limit as i64,
+							offset as i64
+						])?;
+						let hits = Self::collect_search_rows(&mut rows)?;
+						return Ok(LocalSearchPage {
+							hits,
+							total: total as u64,
+						});
 					}
 				}
-				if fts_terms.is_empty() {
-					return Ok(LocalSearchPage::default());
-				}
-				let fts_expr = fts_terms.join(" ");
-				let count_sql = "SELECT count(*) FROM messages_fts WHERE account=?1 AND messages_fts MATCH ?2 AND (?3 IS NULL OR channel=?3)";
-				let total: i64 = self.0.query_row(
-					count_sql,
-					params![account_str, &fts_expr, channel_str],
-					|r| r.get(0),
-				)?;
-				if total > 0 {
-					let select_sql = format!(
-						"SELECT {MESSAGE_COLUMNS_M}, m.channel FROM messages_fts \
-						 JOIN messages m ON m.account=messages_fts.account AND m.channel=messages_fts.channel AND m.id=messages_fts.id \
-						 WHERE messages_fts.account=?1 AND messages_fts MATCH ?2 AND (?3 IS NULL OR messages_fts.channel=?3) \
-						 ORDER BY length(m.id) {order}, m.id {order} LIMIT ?4 OFFSET ?5"
-					);
-					let mut stmt = self.0.prepare(&select_sql)?;
-					let mut rows = stmt.query(params![
-						account_str,
-						&fts_expr,
-						channel_str,
-						limit as i64,
-						offset as i64
-					])?;
-					let hits = Self::collect_search_rows(&mut rows)?;
-					return Ok(LocalSearchPage {
-						hits,
-						total: total as u64,
-					});
-				}
-				// Unspaced scripts (e.g. Thai/CJK mid-word substrings) fallback to bounded scan.
+				// Thai uses substring matching even when FTS would find some prefix matches.
 				let terms_lower: Vec<String> =
 					query.split_whitespace().map(str::to_lowercase).collect();
 				self.scan_messages(
@@ -4083,7 +4088,7 @@ mod search_tests {
 				primary_guild: None,
 				cosmetics: None,
 			},
-			content: "Rust deployment pipeline ready build 42".into(),
+			content: "Rust deployment pipeline ready build 42 ภาษาไทย".into(),
 			edited: false,
 			edited_at: None,
 			reply_to: None,
@@ -4165,7 +4170,7 @@ mod search_tests {
 				account,
 				LocalSearchRequest {
 					channel: None,
-					query: "ทดสอบระบบ",
+					query: "ภาษาไทย",
 					mode: LocalSearchMode::FullText,
 					oldest: false,
 					offset: 0,
@@ -4173,8 +4178,9 @@ mod search_tests {
 				},
 			)
 			.unwrap();
-		assert_eq!(thai_page.total, 1);
+		assert_eq!(thai_page.total, 2);
 		assert_eq!(thai_page.hits[0].1.id, Id(2));
+		assert_eq!(thai_page.hits[1].1.id, Id(1));
 
 		// Regex matching with bounded PikeVM engine.
 		let re_page = store
